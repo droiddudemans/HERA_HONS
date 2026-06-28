@@ -7,7 +7,7 @@ __pycache__/
 *.so
 
 # My own folders
-research_papers/
+raw_data/
 
 # Distribution / packaging
 .Python
