@@ -1,0 +1,12 @@
+----Autocorrelation----
+
+--In words--
+	"Antennas correlation with itself. It's basically the total power received power measured by a single antenna as a function of frequency and time (V_ii = <E_i E_i*>,
+	a function of frequency). The E_i's are complex voltage measured by antenna i. <.> is time averaging."
+--What for?--
+	"Bandpass estimation"
+	"Gain monitoring"
+	"Detecting malfunctioning antennas"
+	"RFI detection"
+	"Absolute calibration"
+	"Receiver noise estimation"
