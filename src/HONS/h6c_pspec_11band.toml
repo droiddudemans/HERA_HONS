@@ -1,0 +1,174 @@
+[Options]
+makeflow_type = "analysis"
+source_script = "~/.bashrc"
+base_mem = 23500
+base_cpu = 1
+timeout = "24h"
+path_to_do_scripts = "/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_pipelines/pipelines/h6c/idr3/v2/post-lstbin/task_scripts"
+conda_env = "h6c_idr3"
+batch_system = "slurm"
+
+[NOTEBOOK_OPTS]
+toml_file = "/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_pipelines/pipelines/h6c/idr3/v2/post-lstbin/h6c_pspec_11band.toml"  # this file
+nb_output_repo = '/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/notebooks'
+
+[NOTEBOOK_TEMPLATE_OPTS]
+nb_template_dir = '/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_notebook_templates/notebooks'
+
+[GLOBAL_OPTS]
+FM_low_freq = 87.5  # in MHz
+FM_high_freq = 108.0  # in MHz
+eigenval_cutoff = 1e-12
+auto_fr_spectrum_file = '/lustre/aoc/projects/hera/zmartino/hera_frf/spectra_cache/spectra_cache_hera_auto.h5'
+min_samp_frac = 0.05  # TODO: this should probably be 0.1, but let's try this for now
+BAND_STR = "49.0~62.2,62.9~74.1,74.4~86.9,110.3~124.6,125.3~136.2,138.8~149.9,150.0~164.0,164.1~180.9,181.6~197.1,197.3~213.2,213.2~227.3"
+LST_MIN = -1.5  # i.e. 22.5 hours
+LST_MAX = 15.5
+
+[AUTO_SMOOTH_OPTS]  # Shared by single_lststack_baseline_pI_FRF_SNR and single_lststack_baseline_scaffolded_and_feathered_inpainter
+auto_inpaint_delay = 50.0  # ns, for smooth auto model
+auto_gauss_fit_buffer_cut = 1e-3
+auto_blacklist_smoother_factor = 0.5
+auto_blacklist_rel_err_thresh = 1.0
+auto_blacklist_downweight = 0.1
+auto_cg_tol = 1e-6
+auto_cg_iter_lim = 500
+
+[FRF_SNR_OPTS]  # Read directly by single_lststack_baseline_pI_FRF_SNR notebook
+filter_delay = 1000.0  # ns
+xtalk_frate = 0.025  # mHz
+skip_fr0_overlap_baselines = false
+fr_spectra_file = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/spectra_cache_hera_core.h5"
+fr_quantile_low = 0.05
+fr_quantile_high = 0.95
+
+[LSTSTACK_RFI_ROUND_6_OPTS]
+z_thresh = 8
+ws_z_thresh = 4
+avg_z_thresh = 2
+max_freq_flag_frac = 0.25
+max_time_flag_frac = 0.50
+time_conv_size = 3600  # in seconds
+
+[SINGLE_LSTSTACK_BASELINE_REINPAINT_OPTS]  # Read directly by single_lststack_baseline_scaffolded_and_feathered_inpainter notebook
+inpaint_delay = 1000.0  # in ns
+inpaint_width_factor = 0.5
+inpaint_zero_dist_weight = 1e-2
+apply_round_6_flags = false  # if false, only re-inpaint pixels with nsamples == 0 (skip round-6 flag waterfalls) # TODO this should be true eventually
+apply_abscal_correction = true  # if true, multiply cross visibilities by upsampled SSM gleam/orig ratio before writing
+abscal_smooth_delay = 33.333  # ns; delay half-width for the 2D DPSS smoothing of the abscal ratio
+abscal_smooth_fringe_rate = 0.0001  # Hz; fringe-rate half-width for the 2D DPSS smoothing of the abscal ratio
+
+[POSTPROCESS_AND_PSPEC_OPTS] # This section is directly read when running the notebook.
+# General Options
+PLOT = true
+SAVE_RESULTS = true
+
+# Spectral Options
+ALREADY_INPAINTED = true
+PERFORM_INPAINT = false
+INPAINT_MIN_DLY = 500.0  # ns
+INPAINT_HORIZON = 1.0
+INPAINT_STANDOFF = 0.0
+INPAINT_EIGENVAL_CUTOFF = 1e-12
+
+PERFORM_DLY_FILT = false
+DLY_FILT_MIN_DLY = 150.0  # ns
+DLY_FILT_HORIZON = 1.0
+DLY_FILT_STANDOFF = 0.0
+DLY_FILT_EIGENVAL_CUTOFF = 1e-12
+
+USE_BAND_AVG_NSAMPLES = true
+FM_CUT_FREQ = 100000000.0  # Hz
+PIXEL_FLAG_CUT = 0.0
+CHANNEL_FLAG_CUT = 0.0
+
+# Temporal options
+INTEGRATION_FLAG_CUT = 0.2
+NINTERLEAVE = 4
+XTALK_FR = 0.01  # mHz
+FR_SPECTRA_FILE = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/spectra_cache_hera_core.h5"
+FR_QUANTILE_LOW = 0.05
+FR_QUANTILE_HIGH = 0.95
+FR_EIGENVAL_CUTOFF = 1e-12
+TARGET_AVERAGING_TIME = 300  # seconds
+
+# pspec options
+EFIELD_HEALPIX_BEAM_FILE = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/NF_HERA_Vivaldi_efield_beam_healpix.fits"
+TAPER = "bh"
+INCLUDE_INTERLEAVE_AUTO_PS = false
+STORE_WINDOW_FUNCTIONS = false
+PSPEC_LST_AVG_RANGES = "1.0~10.0" # carves out PSR J0628-28 and PSR J0742-2822
+
+[WorkFlow]
+actions = [
+    "SINGLE_LSTSTACK_BASELINE_FILTERED_SNR",
+    "LSTSTACK_RFI_ROUND_6_NOTEBOOK",
+    "SINGLE_LSTSTACK_BASELINE_REINPAINT",
+    "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
+    "MERGE_SINGLE_BASELINE_FILES",
+]
+
+[SINGLE_LSTSTACK_BASELINE_FILTERED_SNR]
+args = [
+    "{basename}",
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${NOTEBOOK_OPTS:nb_output_repo}",
+]
+
+[LSTSTACK_RFI_ROUND_6_NOTEBOOK]
+mem = 128000
+prereqs = "SINGLE_LSTSTACK_BASELINE_FILTERED_SNR"
+prereq_chunk_size = "all"
+chunk_size = 1
+stride_length = "all"
+time_centered = false
+args = [
+    "{basename}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${NOTEBOOK_OPTS:nb_output_repo}",
+    "${GLOBAL_OPTS:min_samp_frac}",
+    "${GLOBAL_OPTS:FM_low_freq}",
+    "${GLOBAL_OPTS:FM_high_freq}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:z_thresh}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:ws_z_thresh}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:avg_z_thresh}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:max_freq_flag_frac}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:max_time_flag_frac}",
+    "${LSTSTACK_RFI_ROUND_6_OPTS:time_conv_size}",
+]
+
+[SINGLE_LSTSTACK_BASELINE_REINPAINT]
+prereqs = "LSTSTACK_RFI_ROUND_6_NOTEBOOK"
+prereq_chunk_size = "all"
+args = [
+    "{basename}",
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${NOTEBOOK_OPTS:nb_output_repo}",
+]
+
+[SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC]
+prereqs = "SINGLE_LSTSTACK_BASELINE_REINPAINT"
+prereq_chunk_size = "all"
+args = [
+    "{basename}",
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${NOTEBOOK_OPTS:nb_output_repo}",
+]
+
+[MERGE_SINGLE_BASELINE_FILES]
+prereqs = [
+    "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
+]
+prereq_chunk_size = "all"
+chunk_size = 1
+stride_length = "all"
+time_centered = false
+args = [
+    "{basename}",
+]
+mem=250000
+ncpu = 16

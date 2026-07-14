@@ -1,0 +1,14 @@
+1)
+In this notebook, you'll see that one of the top cells access some environment variable ("os.environ.get(...)"). To run this notebook for a specific baseline file, you will need to modify this one to point to your downloaded file:
+
+SINGLE_BL_FILE: str = os.environ.get('SINGLE_BL_FILE',    
+    '/lustre/aoc/projects/hera/h6c-analysis/IDR3/pspec-outputs-131-nights/zen.LST.baseline.0_4.sum.reinpainted.uvh5') 
+
+I.e. Change this to something like:
+
+SINGLE_BL_FILE: str = os.environ.get('SINGLE_BL_FILE',
+    '/path/to/my_downloaded_uvh5_file.uvh5')
+---------------------------------
+2)
+
+---------------------------------
