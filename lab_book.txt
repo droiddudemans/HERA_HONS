@@ -1,0 +1,4 @@
+2026/07/14
+-Setup HERA big data files
+-Setup HERA analysis files, still need to install hera_pspec and hera-calibration packages using uv.
+-Wrote small part of introduction.

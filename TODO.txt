@@ -1,0 +1,5 @@
+1) Open Windows Powershell, and navigate to HERA_HONS folder
+2) run uv pip install hera-calibration
+3) run uv pip install hera_pspec
+(hera_qm and hera_filters already installed)
+4) Try to run the notebook on a baseline file. Need to still change the directories as Murray instructed in email.
