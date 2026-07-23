@@ -19,6 +19,13 @@
 \usepackage{booktabs}
 \usepackage{array}
 
+\usepackage[
+    backend=biber,
+    style=authoryear
+]{biblatex}
+
+\addbibresource{references.bib}
+
 \usepackage{hyperref}
 \hypersetup{
     colorlinks=true,
@@ -34,7 +41,7 @@
 % =========================================================
 % TITLE INFORMATION
 % =========================================================
-\title{\textbf{Effects of Foreground Mitigation Placement in the HERA Analysis Pipeline on 21 cm Signal Recovery.}}
+\title{\textbf{Effects of Foreground Mitigation Placement\textbackslash Configuration in the HERA Analysis Pipeline on 21 cm Signal Recovery.}}
 
 \author{
     Bernard Weich\\
@@ -60,16 +67,15 @@ Typically 150--250 words.
 
 \section{Introduction}
 
-Provide background, motivation, literature review,
-and clearly state the objectives of the work.
+The 21cm hyperfine transition of neutral hydrogen can be used to probe the distribution and evolution of neutral hydrogen in the early universe. This is useful as it allows for investigating galaxy formation, star formation, structure formation of dark matter etc. The 21cm signal today is redshifted across many frequencies depending on the age of the universe it was emitted at. In particular, redshifts z = 30 to z = 7 are of interest to study the formation of the first stars during the Cosmic Dawn, and the reionization of neutral hydrogen during the EOR (Epoch of Reionization) \parencite{BARKANA2001125}. We will call the 21cm signal the "cosmological signal" throughout the rest of this paper.\\
 
-HERA is a radio interferometer located at the SARAO site in the Karoo area in South Africa. The setup consists of 350 parabolic dishes, each with an antenna feed, 14 m in diameter, and centers 14.6 m apart. The core of the setup is made up of 320 of these dishes. Furthermore, two concentric hexagonal rings follow around the core made up of 30 dishes total.\\
+HERA is a radio interferometer located at the SARAO site in the Karoo area in South Africa. The setup consists of 350 parabolic dishes, 14 m in diameter, each with an antenna feed, and centers 14.6 m apart. The core hexagon of the setup is made up of 320 of these dishes. Furthermore, two concentric hexagonal rings follow around the core made up of 30 dishes total.HERA is excellent for studying large-scale astronomical structures due to large redundancy in baselines with small centre-to-centre distances. This large redundancy produces a better signal-to-noise ratio than for large structures than small structures. The maximum baseline length of the setup is 876 m, and the minimum is 14.6 m. Thus, HERA spans a wide range of cosmological scales that it can probe, specializing in the scales of interest for typical cosmological signal study.\\
 
-HERA is excellent for studying large-scale structures due to large redundancy in baselines with small centre-to-centre distances. This large redundancy produces a better signal-to-noise ratio than for small structures. The maximum baseline length of the setup is 876 m, and the minimum is 14.6 m. Thus, HERA spans a wide range of cosmological scales that it can probe.\\
+In the first results of the phase two implementation, after detailed analysis on a 14-night subset of data, constraints on the cosmological power spectrum with \(2\sigma\) confidence were determined for \(z > 12\), and \(5.5 < z < 12\). It was found that the constraints were stronger for redshift in the EOR, and less constraining near the Cosmic Dawn. The paper also reports increased frequency bandwidth to 50-250 MHz, and that the dominant systematic was found to be mutual coupling which leaks foreground power into low-k modes \((k=0.35 \longrightarrow k=0.55 \text{hMPc}^{-1})\) rendering them unusable \parencite{Abdurashidova_2026}. Mutual coupling is the process by which one antenna re-radiates radiation into another antenna \parencite{camps1998}. \\
 
-In the first results of the phase two implementation, after detailed analysis on a 14-night subset of data, constraints on the cosmological power spectrum with \(2\sigma\) confidence were determined. It was found that the constraints were stronger for redshift near EOR (Epoch of Reionization), and less constraining near the Cosmic Dawn. The paper also reports increased frequency bandwidth to 50-250 MHz, and that the main systematic is mutual coupling which leaks foreground power into low-k modes \((k=0.35 \longrightarrow k=0.55 \text{hMPc}^{-1}\).\\
+So far, HERA Phase 2 has not yet recovered the faint cosmological signal due to this leakage. Some types of filtering, especially fringe-rate filtering, and subsequent signal loss mitigation techniques, were used to try to remove systematics from the power spectrum of the sky whilst trying to maintain a maximum signal loss limit. Typical residual systematics were mutual coupling, spectral discontinuities due to flagging \& night-to-night gain variations, temporal smoothness, fixed \& predictable emitters.  \\
 
-So far, HERA Phase 2 has not been able to recover the faint 21cm signal due to this leakage. The focus of this paper is to investigate different configurations of the analysis pipeline used in the first results paper to try to reduce foreground leakage into these low k-modes.
+The goal of this paper is to attempt to recover the faint cosmological signal using a delay filter to remove smooth foreground power and retain the cosmological signal whilst simultaneously characterizing signal loss for different filtering techniques. The approach assumes that the spectral foreground is smooth, as is the case with galactic synchrotron radiation, the amplitude of which is 4-5 orders larger than the cosmological signal. Fourier transforming over frequency gives each spectral band's visibilities in delay space \(\Tilde{V}\). We expect the smooth foregrounds to lie around zero delay. Using a delay filter (Rectangular, Blackman-Harris, Hann, Tukey, DPSS) can remove these nodes, allowing for much of the power of foreground to be removed and then fourier transformed back to \(V(\nu)\).
 
 \section{Theory}
 
@@ -128,8 +134,7 @@ and collaborators.
 % =========================================================
 % REFERENCES
 % =========================================================
-\bibliographystyle{unsrt}
-\bibliography{references}
+\printbibliography
 
 \end{document}
 ```
