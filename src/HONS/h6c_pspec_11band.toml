@@ -38,7 +38,7 @@ auto_cg_iter_lim = 500
 filter_delay = 1000.0  # ns
 xtalk_frate = 0.025  # mHz
 skip_fr0_overlap_baselines = false
-fr_spectra_file = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/spectra_cache_hera_core.h5"
+fr_spectra_file = "/home/Kwuzard/Projects/HERA_HONS/src/spectra_cache_hera_core.h5"
 fr_quantile_low = 0.05
 fr_quantile_high = 0.95
 
@@ -87,14 +87,14 @@ CHANNEL_FLAG_CUT = 0.0
 INTEGRATION_FLAG_CUT = 0.2
 NINTERLEAVE = 4
 XTALK_FR = 0.01  # mHz
-FR_SPECTRA_FILE = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/spectra_cache_hera_core.h5"
+FR_SPECTRA_FILE = "/home/Kwuzard/Projects/HERA_HONS/src/spectra_cache_hera_core.h5"
 FR_QUANTILE_LOW = 0.05
 FR_QUANTILE_HIGH = 0.95
 FR_EIGENVAL_CUTOFF = 1e-12
 TARGET_AVERAGING_TIME = 300  # seconds
 
 # pspec options
-EFIELD_HEALPIX_BEAM_FILE = "/lustre/aoc/projects/hera/h6c-analysis/IDR3/beam_simulation_products/NF_HERA_Vivaldi_efield_beam_healpix.fits"
+EFIELD_HEALPIX_BEAM_FILE = "/home/Kwuzard/Projects/HERA_HONS/src/HONS/NF_HERA_Vivaldi_efield_beam_healpix.fits"
 TAPER = "bh"
 INCLUDE_INTERLEAVE_AUTO_PS = false
 STORE_WINDOW_FUNCTIONS = false
