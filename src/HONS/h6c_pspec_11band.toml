@@ -61,7 +61,7 @@ abscal_smooth_fringe_rate = 0.0001  # Hz; fringe-rate half-width for the 2D DPSS
 
 [POSTPROCESS_AND_PSPEC_OPTS] # This section is directly read when running the notebook.
 # General Options
-PLOT = true
+PLOT = false
 SAVE_RESULTS = true
 
 # Spectral Options
@@ -72,8 +72,8 @@ INPAINT_HORIZON = 1.0
 INPAINT_STANDOFF = 0.0
 INPAINT_EIGENVAL_CUTOFF = 1e-12
 
-PERFORM_DLY_FILT = false
-DLY_FILT_MIN_DLY = 150.0  # ns
+PERFORM_DLY_FILT = true
+DLY_FILT_MIN_DLY = 150  # ns
 DLY_FILT_HORIZON = 1.0
 DLY_FILT_STANDOFF = 0.0
 DLY_FILT_EIGENVAL_CUTOFF = 1e-12
