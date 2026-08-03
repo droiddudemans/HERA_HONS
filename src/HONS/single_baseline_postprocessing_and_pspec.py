@@ -93,11 +93,11 @@ for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
     print(f'\nLoading config from [{toml_section}] in {TOML_FILE}:')
     for key, val in toml_options[toml_section].items():
         globals()[key.upper()] = val
-        print(f'  {key.upper()} = {val!r}')
+        #print(f'  {key.upper()} = {val!r}')
 
 
 # Settings configurable via env vars (typically set by the bash wrapper). Continued.
-if __name__ == "__main__" and len(sys.argv) == 4:
+if __name__ == "__main__" and len(sys.argv) == 6:
     # Means the file that imported this file is giving us the single bl file to work with.
     input_file = Path(sys.argv[1])
     output_dir = Path(sys.argv[3])
@@ -106,6 +106,10 @@ if __name__ == "__main__" and len(sys.argv) == 4:
     OUT_PSPEC_FILE = output_dir / f"{input_file.stem}.pspec.h5"
     OUT_TAVG_PSPEC_FILE = output_dir / f"{input_file.stem}.tavg.pspec.h5"
     SINGLE_BL_FILE = str(input_file)
+    DLY_FILT_MIN_DLY = int(sys.argv[4])
+    PERFORM_INPAINT = sys.argv[5].lower() == "true"
+
+    print("Override default params.")
 else:
     SINGLE_BL_FILE = os.environ.get('SINGLE_BL_FILE',
         '/home/Kwuzard/Projects/HERA_HONS/raw_data/zen.LST.baseline.0_2.sum.FR0filt.uvh5')
@@ -511,6 +515,7 @@ def delay_filter(data, wgts, filter_centers, filter_half_widths, eigenval_cutoff
         else:
             dly_filt_data[bl] = dly_filt_data[bl] - d_mdl
         inpainted_data[bl] = np.where(wgts[bl] == 0, d_mdl, data[bl])
+        #d_mdl is modeled. d_mdl is an array over delays. Thus, subtracting d_mdl from dly_filt_data is like subtracting actual data in delay space from the delay model.
     
     return dly_filt_data, inpainted_data
 
@@ -1650,6 +1655,9 @@ if SAVE_RESULTS:
     # Create pspec container and write all interleaves to it
     psc = hp.PSpecContainer(OUT_PSPEC_FILE, mode='rw', keep_open=False)
     psc.set_pspec('stokespol', 'interleave_averaged', interleaved_uvp, overwrite=True)
+
+    #Create a file containing the effective delay filtering range
+    
 
     # Create pspec container for time-averaged power spectra
     psc_tavg = hp.PSpecContainer(OUT_TAVG_PSPEC_FILE, mode='rw', keep_open=False)

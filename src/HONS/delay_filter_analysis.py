@@ -23,17 +23,11 @@ for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
 input_dir_raw = Path(__file__).parent.parent.parent / "raw_data" / "single_baselines_raw_data"
 output_dir_delay_filter = Path(__file__).parent.parent.parent / "output" / "output_single_baseline_delay_filter"
 output_dir_no_delay_filter = Path(__file__).parent.parent.parent / "output" / "output_single_baseline_no_delay_filter"
+output_dir_inpaint_test = Path(__file__).parent.parent.parent / "output" / "output_inpaint_test"
 
-def main():
-    output_dir_delay_filter.mkdir(parents=True, exist_ok=True)
-    output_dir_no_delay_filter.mkdir(parents=True, exist_ok=True)
-
-    psc_yes = hp.PSpecContainer(
-        "zen.LST.baseline.0_2.sum.FR0filt.tavg.pspec.h5",
-        mode="r"
-    )
-
-    psc_no = hp.PSpecContainer("zen.LST.baseline.0_2.sum.FR0filt.tavg.pspec_nodelay.h5")
+def output_power_ratio(no_delay_file_name, delay_file_name, dir_out):
+    psc_no = hp.PSpecContainer(no_delay_file_name, mode="r")
+    psc_yes = hp.PSpecContainer(delay_file_name, mode="r")
 
     uvp_yes = psc_yes.get_pspec(
         "stokespol",
@@ -45,61 +39,130 @@ def main():
         "time_and_interleave_averaged"
     )
 
-    spw = 7
+    #Record for each spectral window the ratio spectrum in delay space for this particular delay cutoff
+    for spw in uvp_yes.spw_array:
+        pspec_yes = uvp_yes.data_array[spw][0, :, 0]
+        pspec_no = uvp_no.data_array[spw][0, :, 0]
 
-    delay = uvp_yes.get_dlys(spw)
+        delays = uvp_yes.get_dlys(spw)
+        ratio = pspec_yes / pspec_no
+        outfile = dir_out / f"ratio_spectral_window_{spw}.csv"
+        np.savetxt(outfile,
+            np.column_stack((delays, ratio)),
+            delimiter = ",",
+            header = "delay_ns, ratio_pspec",
+            comments = ""
+        )
+    psc_no._close()
+    psc_yes._close()
 
-    print(delay[:5])           # First few delays
-    print(np.diff(delay[:5]))  # First few spacings
+def power_ratio_calculation(input_file, delay_cutoff, bl_pair_folder_name):
+    dir_output_cutoff = Path(__file__).parent.parent.parent / "output" / "delay_cutoff_variation" / f"{bl_pair_folder_name}" / f"cutoff_{delay_cutoff}_ns"
+    no_delay_file_name = output_dir_no_delay_filter / f"{input_file.stem}.tavg.pspec.h5"
+    delay_file_name = output_dir_delay_filter / f"{input_file.stem}.tavg.pspec.h5"
 
-    bin_width = np.diff(delay)
+    dir_output_cutoff.mkdir(parents=True, exist_ok=True) #Make sure output directory exists
+    output_power_ratio(no_delay_file_name, delay_file_name, dir_output_cutoff)
 
-    print("Unique spacings:", np.unique(bin_width))
-    print("Bin size:", bin_width[1] * pow(10, 9))
 
-    power_no = uvp_no.data_array[spw][0, :, 0]
-    power_yes = uvp_yes.data_array[spw][0, :, 0]
+def test_delay_cutoff():
+    MAX_DELAY = 1000
+    MIN_DELAY = 200
+    DECR_DELAY = 100
+    IS_INPAINT_HERE = True
+    current_delay = MAX_DELAY
 
-    delay = uvp_no.get_dlys(spw)
+    #Loop over delays
+    while current_delay >= MIN_DELAY:
+        #Loop over baselines
+        print(f"Running over all baselines with delay max cutoff : {current_delay}")
+        for input_file in input_dir_raw.glob("*.uvh5"):
+            delay = False
+            pair = input_file.name.split(".")[3]
+            bl_pair_folder_name = "BLPAIR_" + pair
+            ant1, ant2 = pair.split("_")
 
-    ratio = power_yes / power_no
+            if ant1 == ant2:
+                continue  # Skip autocorrelations
 
-    plt.plot(delay, ratio.real)
-    plt.xlabel("Delay (s)")
-    plt.ylabel("Power ratio")
-    plt.grid(True)
+            print(f"Processing file without delay filter : {input_file.name}")
+            try:
+                subprocess.run([
+                    sys.executable,
+                    "single_baseline_postprocessing_and_pspec.py",
+                    str(input_file),
+                    str(delay),
+                    str(output_dir_no_delay_filter.absolute()),
+                    str(current_delay),
+                    str(IS_INPAINT_HERE)
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Exception in subproccess. Failed with error: {e.returncode}")
+    
+            delay = True
+            print(f"Processing file with delay filter : {input_file.name}")
 
-    plt.savefig("power_ratio.png", dpi=300, bbox_inches="tight")
-        
-    return
-    # Run through all baselines with no delay filter
-    for input_file in input_dir_raw.glob("*.uvh5"):
-        delay = False
-        print(f"Processing file without delay filter : {input_file.name}")
+            try:
+                subprocess.run([
+                    sys.executable,
+                    "single_baseline_postprocessing_and_pspec.py",
+                    str(input_file),
+                    str(delay),
+                    str(output_dir_delay_filter.absolute()),
+                    str(current_delay),
+                    str(IS_INPAINT_HERE)
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Exception in subproccess. Failed with error: {e.returncode}")
+
+            output_power_ratio(input_file, current_delay, bl_pair_folder_name)
+        current_delay -= DECR_DELAY
+
+def test_inpainting():
+    MIN_DELAY_TEST = 150
+    IS_INPAINT_HERE = True
+    output_inpaint_delay_on = output_dir_inpaint_test / "delay_filter_on"
+    output_inpaint_delay_off = output_dir_inpaint_test / "delay_filter_off"
+    file_to_test = Path(__file__).parent.parent.parent / "raw_data" / "single_baselines_raw_data" / "zen.LST.baseline.0_3.sum.FR0filt.uvh5"
+
+    is_delay = False
+    try:
         subprocess.run([
             sys.executable,
             "single_baseline_postprocessing_and_pspec.py",
-            str(input_file),
-            str(delay),
-            str(output_dir_no_delay_filter.absolute())
+            str(file_to_test),
+            str(is_delay),
+            str(output_inpaint_delay_off.absolute()),
+            str(MIN_DELAY_TEST),
+            str(IS_INPAINT_HERE)
         ], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Exception in subproccess. Failed with error: {e.returncode}")
 
-        delay = True
-        print(f"Processing file with delay filter : {input_file.name}")
+    is_delay = True
+    try:
         subprocess.run([
             sys.executable,
             "single_baseline_postprocessing_and_pspec.py",
-            str(input_file),
-            str(delay),
-            str(output_dir_no_delay_filter.absolute())
+            str(file_to_test),
+            str(is_delay),
+            str(output_inpaint_delay_on.absolute()),
+            str(MIN_DELAY_TEST),
+            str(IS_INPAINT_HERE)
         ], check=True)
-        no_delay_file_name = str(output_dir_no_delay_filter) + str(input_file) + ".pspec.h5"
-        delay_file_name = str(output_dir_delay_filter) + str(input_file) + ".pspec.h5"
-        psc_no = hp.PSpecContainer(no_delay_file_name, mode="r")
-        psc_yes = hp.PSpecContainer(delay_file_name, mode="r")
+    except subprocess.CalledProcessError as e:
+        print(f"Exception in subproccess. Failed with error: {e.returncode}")
+    no_delay_file_name = output_inpaint_delay_off / f"{file_to_test.stem}.tavg.pspec.h5"
+    delay_file_name = output_inpaint_delay_on / f"{file_to_test.stem}.tavg.pspec.h5"
+    output_power_ratio(no_delay_file_name, delay_file_name, output_dir_inpaint_test)
 
-
-
+def main(mode):
+    if mode == 0:
+        #Test if different minimum delay cutoffs have an effect on the P(after) / P(Before) for delay filtering.
+        test_delay_cutoff()
+    elif mode == 1:
+        #Test whether inpainting decreases fluctuations on the P(After) / P(Before) for delay filtering.
+        test_inpainting()
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 2: main(int(sys.argv[1]))
