@@ -78,8 +78,12 @@ import importlib
 # %%
 import toml
 
+#Global tracker vars
+is_delay_analysis = False
+
 # Settings configurable via env vars (typically set by the bash wrapper).
 SINGLE_BL_FILE: str
+OUT_BL_DELAY_RANGE_FILE: str
 OUT_PSPEC_FILE: str
 OUT_TAVG_PSPEC_FILE: str
 TOML_FILE = os.environ.get('TOML_FILE',
@@ -104,15 +108,18 @@ if __name__ == "__main__" and len(sys.argv) == 6:
 
     PERFORM_DLY_FILT = sys.argv[2].lower() == "true"
     OUT_PSPEC_FILE = output_dir / f"{input_file.stem}.pspec.h5"
-    OUT_TAVG_PSPEC_FILE = output_dir / f"{input_file.stem}.tavg.pspec.h5"
+    OUT_TAVG_PSPEC_FILE = PERFORM_DLY_FILT and output_dir / f"{input_file.stem}_cutoff_{sys.argv[4]}.tavg.pspec.h5" or (
+        output_dir / f"{input_file.stem}.tavg.pspec.h5")
+    OUT_BL_DELAY_RANGE_FILE = output_dir / f"{input_file.stem}_cutoff_{sys.argv[4]}.tavg.delay_filter_hw.csv"
     SINGLE_BL_FILE = str(input_file)
     DLY_FILT_MIN_DLY = int(sys.argv[4])
     PERFORM_INPAINT = sys.argv[5].lower() == "true"
 
+    is_delay_analysis = True
     print("Override default params.")
 else:
     SINGLE_BL_FILE = os.environ.get('SINGLE_BL_FILE',
-        '/home/Kwuzard/Projects/HERA_HONS/raw_data/zen.LST.baseline.0_2.sum.FR0filt.uvh5')
+        '/home/Kwuzard/Projects/HERA_HONS/raw_data/single_baselines_raw_data/zen.LST.baseline.0_2.sum.FR0filt.uvh5')
     OUT_PSPEC_FILE = os.environ.get('OUT_PSPEC_FILE',
         str(Path(SINGLE_BL_FILE).with_suffix('.pspec.h5')))
     OUT_TAVG_PSPEC_FILE = os.environ.get('OUT_TAVG_PSPEC_FILE',
@@ -646,6 +653,13 @@ def timeavg_data(data, flags, nsamples, Navg=int(np.round(AVERAGING_TIME / (dt *
 # %%
 bl_vec = (data.antpos[ANTPAIR[1]] - data.antpos[ANTPAIR[0]])
 bl_len = np.linalg.norm(bl_vec[:2]) / constants.c
+
+#Output the range of the delay filter, because we need it for graphs and estimating how much signal loss has occured in delay_filter_analysis.py
+if PERFORM_DLY_FILT:
+    with open(OUT_BL_DELAY_RANGE_FILE, "w") as file:
+        file.write(f"BL_HW_(s), {max(DLY_FILT_HORIZON * bl_len * 1e9 + DLY_FILT_STANDOFF, DLY_FILT_MIN_DLY)}\n")
+        #We multiply by 1e9, because bl_len is in seconds.
+
 dly_filter_centers, dly_filter_half_widths = vis_clean.gen_filter_properties(
     ax='freq', horizon=DLY_FILT_HORIZON, standoff=DLY_FILT_STANDOFF, 
     min_dly=DLY_FILT_MIN_DLY, bl_len=bl_len
@@ -1377,7 +1391,6 @@ for spw, band in enumerate(bands):
             P_SN = (P_SN**2 - .5 / (len(uvps) - 1) * P_N**2)**.5 
             P_SN[~np.isfinite(P_SN)] = np.inf
             uvp.set_stats('P_SN', key, P_SN)
-
 # %%
 # TODO: graduate this code into hera_pspec
 
