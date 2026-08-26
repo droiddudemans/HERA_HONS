@@ -9,6 +9,9 @@ __pycache__/
 # My data
 raw_data/
 output/
+validation_data/
+validation_out/eor_foregrounds_pspec/
+validation_out/eor_only_pspec/
 
 # Distribution / packaging
 .Python
