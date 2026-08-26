@@ -21,7 +21,7 @@ FM_high_freq = 108.0  # in MHz
 eigenval_cutoff = 1e-12
 auto_fr_spectrum_file = '/lustre/aoc/projects/hera/zmartino/hera_frf/spectra_cache/spectra_cache_hera_auto.h5'
 min_samp_frac = 0.05  # TODO: this should probably be 0.1, but let's try this for now
-BAND_STR = "50.2~62.2,63.3~73.5,74.6~85.4,117.3~124.4,125.4~136.2,159.3~169.9,171.9~181.1,212.3~220.6"
+BAND_STR = "49.0~62.2,62.9~74.1,74.4~86.9,110.3~124.6,125.3~136.2,138.8~149.9,150.0~164.0,164.1~180.9,181.6~197.1,197.3~213.2,213.2~227.3"
 LST_MIN = -1.5  # i.e. 22.5 hours
 LST_MAX = 15.5
 

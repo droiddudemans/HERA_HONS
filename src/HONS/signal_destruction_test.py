@@ -3,6 +3,7 @@ import os
 import toml
 import numpy as np
 import hera_pspec as hp
+import matplotlib as matplot
 import matplotlib.pyplot as plt
 import subprocess
 from pathlib import Path
@@ -36,9 +37,9 @@ def plot_delta2_tau(
 
         Delta^2(tau) ~ tau^3 P(tau)
 
-    comparing delay-filtered EOR + foregrounds against EOR only.
+    comparing delay-filtered EOR + foregrounds against unfiltered EOR only.
 
-    delay_hw is in ns.
+    delay_hw is in nanoseconds.
     """
 
     psc_delay = hp.PSpecContainer(delay_pspec_file, mode="r")
@@ -72,28 +73,73 @@ def plot_delta2_tau(
         # delays is in seconds here.
         # ------------------------------------------------------------
 
-        tau_ns = np.abs(delays) * 1e9
-
-        delta2_fg = tau_ns**3 * P_fg
-        delta2_eor = tau_ns**3 * P_eor
+        # Delay axis in ns
+        delays_ns = delays * 1e9
 
         # ------------------------------------------------------------
-        # Log-log requires:
-        #
-        #   tau > 0
-        #   Delta^2 > 0
+        # Split negative and positive delays, determine the variance
         # ------------------------------------------------------------
 
-        valid_fg = (
-            (tau_ns > 0)
-            & np.isfinite(delta2_fg)
-            & (delta2_fg > 0)
+        neg = delays_ns < 0
+        pos = delays_ns > 0
+
+        # Use |tau| as the x-axis for each branch
+        tau_neg = np.abs(delays_ns[neg])
+        tau_pos = delays_ns[pos]
+
+        # Delta^2 ~ tau^3 P(tau)
+        delta2_fg_neg = tau_neg**3 * P_fg[neg]
+        delta2_fg_pos = tau_pos**3 * P_fg[pos]
+
+        delta2_eor_neg = tau_neg**3 * P_eor[neg]
+        delta2_eor_pos = tau_pos**3 * P_eor[pos]
+
+        # ------------------------------------------------------------
+        # Valid points (gives the tau's that are valid)
+        # ------------------------------------------------------------
+
+        valid_fg_neg = (
+            np.isfinite(delta2_fg_neg)
+            & (delta2_fg_neg > 0)
         )
 
-        valid_eor = (
-            (tau_ns > 0)
-            & np.isfinite(delta2_eor)
-            & (delta2_eor > 0)
+        valid_fg_pos = (
+            np.isfinite(delta2_fg_pos)
+            & (delta2_fg_pos > 0)
+        )
+
+        valid_eor_neg = (
+            np.isfinite(delta2_eor_neg)
+            & (delta2_eor_neg > 0)
+        )
+
+        valid_eor_pos = (
+            np.isfinite(delta2_eor_pos)
+            & (delta2_eor_pos > 0)
+        )
+
+        # ------------------------------------------------------------
+        # Invalid points (gives the tau's that are invalid)
+        # ------------------------------------------------------------
+
+        invalid_fg_neg = (
+            ~np.isfinite(delta2_fg_neg)
+            | (delta2_fg_neg < 0)
+        )
+
+        invalid_fg_pos = (
+            ~np.isfinite(delta2_fg_pos)
+            | (delta2_fg_pos < 0)
+        )
+
+        invalid_eor_neg = (
+            ~np.isfinite(delta2_eor_neg)
+            | (delta2_eor_neg < 0)
+        )
+
+        invalid_eor_pos = (
+            ~np.isfinite(delta2_eor_pos)
+            | (delta2_eor_pos < 0)
         )
 
         # ------------------------------------------------------------
@@ -102,20 +148,61 @@ def plot_delta2_tau(
 
         fig, ax = plt.subplots(figsize=(9, 6))
 
+        # Negative-delay branch
         ax.loglog(
-            tau_ns[valid_fg],
-            delta2_fg[valid_fg],
+            tau_neg[valid_fg_neg],
+            delta2_fg_neg[valid_fg_neg],
             lw=2,
-            label="EOR + foregrounds"
+            label="EOR + foregrounds ($\\tau < 0$)",
+            color='red'
         )
 
         ax.loglog(
-            tau_ns[valid_eor],
-            delta2_eor[valid_eor],
+            tau_neg[valid_eor_neg],
+            delta2_eor_neg[valid_eor_neg],
             lw=2,
-            label="EOR only"
+            linestyle="--",
+            label="EOR only ($\\tau < 0$)",
+            color='red'
         )
 
+        # Negative-delay invalid points
+        ax.scatter(
+            tau_neg[invalid_fg_neg],
+            np.zeros_like(tau_neg[invalid_fg_neg]),
+            lw=1,
+            marker='X',
+            color='red'
+        )
+
+
+        # Positive-delay branch
+        ax.loglog(
+            tau_pos[valid_fg_pos],
+            delta2_fg_pos[valid_fg_pos],
+            lw=2,
+            label="EOR + foregrounds ($\\tau > 0$)",
+            color = 'blue'
+        )
+
+        ax.loglog(
+            tau_pos[valid_eor_pos],
+            delta2_eor_pos[valid_eor_pos],
+            lw=2,
+            linestyle="--",
+            label="EOR only ($\\tau > 0$)",
+            color = 'blue'
+        )
+
+        # Positive-delay invalid points
+        ax.scatter(
+            tau_pos[invalid_fg_pos],
+            np.zeros_like(tau_pos[invalid_fg_pos]),
+            lw=1,
+            marker='X',
+            color='blue'
+        )
+        
         # Delay-filter half width
         ax.axvline(
             delay_hw,
@@ -194,7 +281,7 @@ def process_data():
 
         off_delay_file_pspec = bl_pair_folder_delay_off / f"{input_file.stem}.tavg.pspec.h5"
         eor_file_pspec = bl_pair_folder_eor / f"{input_file.stem}.tavg.pspec.h5"
-        on_delay_file_pspec = bl_pair_folder_delay_on / f"{input_file.stem}.tavg.pspec.h5"
+        on_delay_file_pspec = bl_pair_folder_delay_on / f"{input_file.stem}_cutoff_{DLY_FILT_MIN_DLY}.tavg.pspec.h5"
         delay_hw = bl_pair_folder_delay_on / f"{input_file.stem}_cutoff_{DLY_FILT_MIN_DLY}.tavg.delay_filter_hw.csv"
 
         #Create PSPEC for no delay (foregrounds + eor)
@@ -206,7 +293,7 @@ def process_data():
                     "single_baseline_postprocessing_and_pspec.py",
                     str(input_file),
                     "False",
-                    str(dir_off_delay.absolute()),
+                    str(bl_pair_folder_delay_off.absolute()),
                     str(DLY_FILT_MIN_DLY),
                     str(IS_INPAINT_HERE)
                 ], check=True)
@@ -217,14 +304,14 @@ def process_data():
 
         #Create PSPEC for no delay (eor only)
         if not eor_file_pspec.is_file():
-            print(f"Processing file (eor only) without delay filter : {eor_file_pspec.name}")
+            print(f"Processing file (eor only) without delay filter : {input_file.name}")
             try:
                 subprocess.run([
                     sys.executable,
                     "single_baseline_postprocessing_and_pspec.py",
                     str(eor_only_input_file),
                     "False",
-                    str(eor_file_pspec.absolute()),
+                    str(bl_pair_folder_eor.absolute()),
                     str(DLY_FILT_MIN_DLY),
                     str(IS_INPAINT_HERE)
                 ], check=True)
@@ -242,7 +329,7 @@ def process_data():
                     "single_baseline_postprocessing_and_pspec.py",
                     str(input_file),
                     "True",
-                    str(dir_on_delay.absolute()),
+                    str(bl_pair_folder_delay_on.absolute()),
                     str(DLY_FILT_MIN_DLY),
                     str(IS_INPAINT_HERE)
                 ], check=True)
