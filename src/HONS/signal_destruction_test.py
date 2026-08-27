@@ -25,27 +25,31 @@ for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
 
 IS_INPAINT_HERE = False
 
-#Plots delta^2(tau)
-def plot_delta2_tau(
+
+def plot_delta2_tau_signed(
+    unfiltered_pspec_file,
     delay_pspec_file,
     eor_pspec_file,
     out_dir,
     delay_hw,
 ):
     """
-    Plot qualitative
+    Plot Delta^2(tau) against the signed delay axis.
 
-        Delta^2(tau) ~ tau^3 P(tau)
-
-    comparing delay-filtered EOR + foregrounds against unfiltered EOR only.
-
-    delay_hw is in nanoseconds.
+    Negative and positive delays remain on their respective sides
+    of zero, while both are shown on the same axes.
     """
 
+    psc_unfiltered = hp.PSpecContainer(unfiltered_pspec_file, mode="r")
     psc_delay = hp.PSpecContainer(delay_pspec_file, mode="r")
     psc_eor = hp.PSpecContainer(eor_pspec_file, mode="r")
 
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    uvp_unfiltered = psc_unfiltered.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
 
     uvp_delay = psc_delay.get_pspec(
         "stokespol",
@@ -61,149 +65,437 @@ def plot_delta2_tau(
 
     for key in uvp_delay.get_all_keys():
 
-        P_fg = np.squeeze(uvp_delay.get_data(key).real)
-        P_eor = np.squeeze(uvp_eor.get_data(key).real)
+        P_unfiltered = np.squeeze(
+            uvp_unfiltered.get_data(key).real
+        )
 
+        P_fg = np.squeeze(
+            uvp_delay.get_data(key).real
+        )
+
+        P_eor = np.squeeze(
+            uvp_eor.get_data(key).real
+        )
+
+        PN = np.squeeze(uvp_delay.get_stats("P_N", key))
         # Delay axis
-        delays = np.squeeze(uvp_delay.get_dlys(key[0]))
+        delays = np.squeeze(
+            uvp_delay.get_dlys(key[0])
+        )
 
-        # ------------------------------------------------------------
-        # Delta^2(tau) ~ tau^3 P(tau)
-        #
-        # delays is in seconds here.
-        # ------------------------------------------------------------
-
-        # Delay axis in ns
+        # Convert seconds -> ns
         delays_ns = delays * 1e9
 
         # ------------------------------------------------------------
-        # Split negative and positive delays, determine the variance
+        # Delta^2(tau) ~ |tau|^3 P(tau)
+        #
+        # IMPORTANT:
+        # The x-axis retains the SIGN of tau.
+        # Only the tau^3 weighting uses |tau|.
         # ------------------------------------------------------------
 
-        neg = delays_ns < 0
-        pos = delays_ns > 0
-
-        # Use |tau| as the x-axis for each branch
-        tau_neg = np.abs(delays_ns[neg])
-        tau_pos = delays_ns[pos]
-
-        # Delta^2 ~ tau^3 P(tau)
-        delta2_fg_neg = tau_neg**3 * P_fg[neg]
-        delta2_fg_pos = tau_pos**3 * P_fg[pos]
-
-        delta2_eor_neg = tau_neg**3 * P_eor[neg]
-        delta2_eor_pos = tau_pos**3 * P_eor[pos]
+        delta2_unfiltered = np.abs(delays_ns)**3 * P_unfiltered
+        delta2_fg = np.abs(delays_ns)**3 * P_fg
+        delta2_eor = np.abs(delays_ns)**3 * P_eor
+        delta2_PN = np.abs(delays_ns)**3 * PN
 
         # ------------------------------------------------------------
-        # Valid points (gives the tau's that are valid)
+        # Finite positive values only
         # ------------------------------------------------------------
 
-        valid_fg_neg = (
-            np.isfinite(delta2_fg_neg)
-            & (delta2_fg_neg > 0)
+        valid_fg = (
+            np.isfinite(delta2_fg)
         )
 
-        valid_fg_pos = (
-            np.isfinite(delta2_fg_pos)
-            & (delta2_fg_pos > 0)
+        valid_eor = (
+            np.isfinite(delta2_eor)
         )
 
-        valid_eor_neg = (
-            np.isfinite(delta2_eor_neg)
-            & (delta2_eor_neg > 0)
-        )
-
-        valid_eor_pos = (
-            np.isfinite(delta2_eor_pos)
-            & (delta2_eor_pos > 0)
-        )
-
+        delta2_neg_indices = delta2_fg < 0
+        tau_neg_pspec = delays_ns[delta2_neg_indices]
+        delta2_fg_avg_neg = delta2_fg[delta2_neg_indices]
         # ------------------------------------------------------------
-        # Invalid points (gives the tau's that are invalid)
+        # Separate negative and positive delays
+        #
+        # BUT do NOT take abs() of the delay itself.
         # ------------------------------------------------------------
 
-        invalid_fg_neg = (
-            ~np.isfinite(delta2_fg_neg)
-            | (delta2_fg_neg < 0)
+        negative_fg = (
+            valid_fg
+            & (delays_ns < 0)
         )
 
-        invalid_fg_pos = (
-            ~np.isfinite(delta2_fg_pos)
-            | (delta2_fg_pos < 0)
+        positive_fg = (
+            valid_fg
+            & (delays_ns > 0)
         )
 
-        invalid_eor_neg = (
-            ~np.isfinite(delta2_eor_neg)
-            | (delta2_eor_neg < 0)
+        negative_unfiltered = (delays_ns < 0)
+        positive_unfiltered = (delays_ns > 0)
+
+        negative_PN = (delays_ns < 0)
+        positive_PN = (delays_ns > 0)
+
+        negative_eor = (
+            valid_eor
+            & (delays_ns < 0)
         )
 
-        invalid_eor_pos = (
-            ~np.isfinite(delta2_eor_pos)
-            | (delta2_eor_pos < 0)
+        positive_eor = (
+            valid_eor
+            & (delays_ns > 0)
         )
 
         # ------------------------------------------------------------
         # Plot
         # ------------------------------------------------------------
 
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # EOR + foregrounds
+        ax.plot(
+            delays_ns[negative_fg],
+            abs(delta2_fg[negative_fg]),
+            lw = 2,
+            color = "red",
+            label = rf"$abs(\Delta^2(\tau))$ for EOR + foregrounds"
+        )
+
+        ax.plot(
+            delays_ns[positive_fg],
+            abs(delta2_fg[positive_fg]),
+            lw=2,
+            color="red"
+        )
+
+        # EOR only
+        ax.plot(
+            delays_ns[negative_eor],
+            delta2_eor[negative_eor],
+            lw = 2,
+            linestyle = "--",
+            color = "blue",
+            label = rf"$\Delta^2(\tau)$ for EOR only (folded)"
+        )
+
+        ax.plot(
+            delays_ns[positive_eor],
+            delta2_eor[positive_eor],
+            lw = 2,
+            linestyle = "--",
+            color = "blue"
+        )
+
+        # Noise plots
+        ax.plot(
+            delays_ns[negative_PN],
+            delta2_PN[negative_PN],
+            lw = 1,
+            linestyle = ":",
+            color = 'k',
+            label = rf"$\Delta^2(\tau)$ for Noise ($P_N$)"
+        )
+
+        ax.plot(
+            delays_ns[positive_PN],
+            delta2_PN[positive_PN],
+            lw=1,
+            linestyle=":",
+            color = 'k',
+        )
+
+        #Plot unfiltered
+        ax.plot(
+            delays_ns[negative_unfiltered],
+            abs(delta2_unfiltered[negative_unfiltered]),
+            lw = 2,
+            color = "orange",
+            label = rf"$abs(\Delta^2(\tau))$ for unfiltered EOR + foregrounds"
+        )
+
+        ax.plot(
+            delays_ns[positive_unfiltered],
+            abs(delta2_unfiltered[positive_unfiltered]),
+            lw = 2,
+            linestyle = "--",
+            color = "orange",
+        )
+
+        ax.scatter(
+            tau_neg_pspec,
+            abs(delta2_fg_avg_neg),
+            lw=2,
+            color="blue",
+            label=rf"$\Delta^2(\tau) < 0$ for EOR + foregrounds"
+        )
+
+        # ------------------------------------------------------------
+        # Delay filter boundaries
+        # ------------------------------------------------------------
+
+        ax.axvline(
+            -delay_hw,
+            color="k",
+            linestyle="--",
+            linewidth=1.5,
+            label=fr"$\pm\tau_\mathrm{{hw}}={delay_hw:.1f}$ ns"
+        )
+
+        ax.axvline(
+            delay_hw,
+            color="k",
+            linestyle="--",
+            linewidth=1.5
+        )
+
+        # Zero-delay reference
+        ax.axvline(
+            0,
+            color="gray",
+            linestyle=":",
+            linewidth=1
+        )
+
+        # ------------------------------------------------------------
+        # Labels
+        # ------------------------------------------------------------
+
+        ax.set_xlabel(r"$\tau$ [ns]")
+
+        ax.set_ylabel(
+            r"$\Delta^2(\tau) \propto |\tau|^3 P(\tau)$"
+        )
+
+        ax.set_title(
+            f"Signed delay spectrum — SPW {key[0]}"
+        )
+
+        ax.grid(
+            True,
+            which="both",
+            alpha=0.25
+        )
+
+        ax.legend()
+        ax.set_yscale("log")
+
+        fig.tight_layout()
+
+        output_file = (
+            out_dir
+            / f"delta2_tau_signed_spw_{key[0]}.png"
+        )
+
+        fig.savefig(
+            output_file,
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+        plt.show()
+        plt.close(fig)
+
+        print(f"Saved: {output_file}")
+
+    psc_delay._close()
+    psc_eor._close()
+
+# Plots delta^2(tau)
+
+def plot_delta2_tau(
+    unfiltered_pspec_file,
+    delay_pspec_file,
+    eor_pspec_file,
+    out_dir,
+    delay_hw,
+):
+    """
+    Plot qualitative
+        Delta^2(tau) ~ tau^3 P(tau)
+
+    comparing delay-filtered EOR + foregrounds against
+    unfiltered EOR only.
+
+    delay_hw is in nanoseconds.
+    """
+
+    psc_unfiltered_sum = hp.PSpecContainer(unfiltered_pspec_file, mode='r')
+    psc_delay = hp.PSpecContainer(delay_pspec_file, mode="r")
+    psc_eor = hp.PSpecContainer(eor_pspec_file, mode="r")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    uvp_unfiltered_sum = psc_unfiltered_sum.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    uvp_delay = psc_delay.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    uvp_eor = psc_eor.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    print(f"Nominal delay half-width: {delay_hw} ns")
+
+    for key in uvp_delay.get_all_keys():
+
+        P_unfiltered = np.squeeze(
+            uvp_unfiltered_sum.get_data(key).real
+        )
+
+        P_fg = np.squeeze(
+            uvp_delay.get_data(key).real
+        )
+
+        P_eor = np.squeeze(
+            uvp_eor.get_data(key).real
+        )
+
+        PN = np.squeeze(uvp_delay.get_stats("P_N", key))
+
+        # ------------------------------------------------------------
+        # Delay axis
+        # ------------------------------------------------------------
+
+        delays = np.squeeze(
+            uvp_delay.get_dlys(key[0])
+        )
+
+        # Convert seconds -> ns
+        delays_ns = delays * 1e9
+
+        # ------------------------------------------------------------
+        # Split negative and positive delays
+        # ------------------------------------------------------------
+
+        neg = delays_ns < 0
+        pos = delays_ns > 0
+
+        # Use |tau| as the x-axis for both branches
+        tau_neg = np.abs(delays_ns[neg])
+        tau_pos = delays_ns[pos]
+
+        # ------------------------------------------------------------
+        # Delta^2(tau) ~ |tau|^3 P(tau)
+        # ------------------------------------------------------------
+
+        delta2_fg_neg = tau_neg**3 * P_fg[neg]
+        delta2_fg_pos = tau_pos**3 * P_fg[pos]
+
+        PN_neg = tau_neg**3 * PN[neg]
+        PN_pos = tau_pos**3 * PN[pos]
+
+        delta2_eor_neg = tau_neg**3 * P_eor[neg]
+        delta2_eor_pos = tau_pos**3 * P_eor[pos]
+
+        delta2_unfiltered_neg = tau_neg**3 * P_unfiltered[neg]
+        delta2_unfiltered_pos = tau_pos**3 * P_unfiltered[pos]
+
+        min_len = min(
+            len(tau_neg),
+            len(tau_pos),
+            len(delta2_fg_neg),
+            len(delta2_fg_pos),
+            len(delta2_eor_neg),
+            len(delta2_eor_pos),
+            len(PN_neg),
+            len(PN_pos),
+            len(delta2_unfiltered_neg),
+            len(delta2_unfiltered_pos)
+        )
+
+        tau_neg = tau_neg[:min_len]
+        tau_pos = tau_pos[:min_len]
+
+        delta2_fg_neg = delta2_fg_neg[:min_len]
+        delta2_fg_pos = delta2_fg_pos[:min_len]
+
+        PN_neg = PN_neg[:min_len]
+        PN_pos = PN_pos[:min_len]
+
+        delta2_eor_neg = delta2_eor_neg[:min_len]
+        delta2_eor_pos = delta2_eor_pos[:min_len]
+
+        delta2_unfiltered_neg = delta2_unfiltered_neg[:min_len]
+        delta2_unfiltered_pos = delta2_unfiltered_pos[:min_len]
+
+        delta2_fg_avg = (delta2_fg_pos + delta2_fg_neg) / 2.0
+        PN_avg = (PN_neg + PN_pos) / 2.0
+        delta2_eor_avg = (delta2_eor_pos + delta2_eor_neg) / 2.0
+        delta2_unfiltered_avg = (delta2_unfiltered_pos + delta2_unfiltered_neg) / 2.0
+
+        delta2_neg_indices = delta2_fg_avg < 0
+        tau_neg_pspec = tau_pos[delta2_neg_indices]
+        delta2_fg_avg_neg = delta2_fg_avg[delta2_neg_indices]
+
+        # ------------------------------------------------------------
+        # Plot
+        #
+        # plot_positive_segments() handles NaN, Inf, zero and
+        # negative values without deleting neighbouring points.
+        # ------------------------------------------------------------
+
         fig, ax = plt.subplots(figsize=(9, 6))
 
-        # Negative-delay branch
-        ax.loglog(
-            tau_neg[valid_fg_neg],
-            delta2_fg_neg[valid_fg_neg],
-            lw=2,
-            label="EOR + foregrounds ($\\tau < 0$)",
-            color='red'
+        # ------------------------------------------------------------
+        # Negative + positive averaged-delay branch
+        # ------------------------------------------------------------
+
+        ax.plot(
+            tau_pos,
+            abs(delta2_fg_avg),
+            lw = 2,
+            color = "red",
+            label = rf"$abs(\Delta^2(\tau))$ for EOR + foregrounds (folded)"
         )
 
-        ax.loglog(
-            tau_neg[valid_eor_neg],
-            delta2_eor_neg[valid_eor_neg],
-            lw=2,
-            linestyle="--",
-            label="EOR only ($\\tau < 0$)",
-            color='red'
+        ax.plot(
+            tau_pos,
+            abs(delta2_unfiltered_avg),
+            lw = 2,
+            linestyle = "--",
+            color = "orange",
+            label = rf"$abs(\Delta^2(\tau))$ for unfiltered EOR + foregrounds (folded)"
         )
 
-        # Negative-delay invalid points
+        ax.plot(
+            tau_pos,
+            delta2_eor_avg,
+            lw = 2,
+            linestyle = "--",
+            color = "red",
+            label = rf"$\Delta^2(\tau)$ for EOR only (folded)"
+        )
+
+        ax.plot(
+            tau_pos,
+            PN_avg,
+            linestyle = ":",
+            lw = 1,
+            color = "k",
+            label = rf"$\Delta^2(\tau)$ for Noise ($P_N$) (folded)"
+        )
+
         ax.scatter(
-            tau_neg[invalid_fg_neg],
-            np.zeros_like(tau_neg[invalid_fg_neg]),
-            lw=1,
-            marker='X',
-            color='red'
+            tau_neg_pspec,
+            abs(delta2_fg_avg_neg),
+            lw = 2,
+            color = "blue",
+            label = rf"$\Delta^2(\tau) < 0$ for EOR + foregrounds (folded)"
         )
 
+        ax.set_yscale('log')
+        ax.set_xscale('log')
 
-        # Positive-delay branch
-        ax.loglog(
-            tau_pos[valid_fg_pos],
-            delta2_fg_pos[valid_fg_pos],
-            lw=2,
-            label="EOR + foregrounds ($\\tau > 0$)",
-            color = 'blue'
-        )
-
-        ax.loglog(
-            tau_pos[valid_eor_pos],
-            delta2_eor_pos[valid_eor_pos],
-            lw=2,
-            linestyle="--",
-            label="EOR only ($\\tau > 0$)",
-            color = 'blue'
-        )
-
-        # Positive-delay invalid points
-        ax.scatter(
-            tau_pos[invalid_fg_pos],
-            np.zeros_like(tau_pos[invalid_fg_pos]),
-            lw=1,
-            marker='X',
-            color='blue'
-        )
-        
+        # ------------------------------------------------------------
         # Delay-filter half width
+        # ------------------------------------------------------------
+
         ax.axvline(
             delay_hw,
             color="k",
@@ -212,26 +504,173 @@ def plot_delta2_tau(
             label=fr"$\tau_\mathrm{{hw}}={delay_hw:.1f}$ ns"
         )
 
-        ax.set_xlabel(r"$|\tau|$ [ns]")
+        # ------------------------------------------------------------
+        # Labels
+        # ------------------------------------------------------------
 
-        ax.set_ylabel(r"$\Delta^2(\tau) \propto \tau^3 P(\tau)$")
+        ax.set_xlabel(r"$log(|\tau|)$ [ns]")
 
-        ax.set_title(f"Delay spectrum — SPW {key[0]}")
+        ax.set_ylabel(
+            r"$log(\Delta^2(\tau) \propto |\tau|^3 P(\tau))$"
+        )
 
-        ax.grid(True, which = "both", alpha=0.25)
+        ax.set_title(
+            rf"Delay spectrum $\Delta^2(\tau)$ — SPW {key[0]}"
+        )
+
+        ax.grid(
+            True,
+            which="both",
+            alpha=0.25
+        )
 
         ax.legend()
 
         fig.tight_layout()
 
-        output_file = (out_dir / f"delta2_tau_spw_{key[0]}.png")
+        output_file = (
+            out_dir /
+            f"delta2_tau_spw_{key[0]}.png"
+        )
 
-        fig.savefig(output_file, dpi = 300, bbox_inches="tight")
+        fig.savefig(
+            output_file,
+            dpi=300,
+            bbox_inches="tight"
+        )
 
         plt.show()
         plt.close(fig)
 
         print(f"Saved: {output_file}")
+
+    psc_delay._close()
+    psc_eor._close()
+
+def find_true_hw(uvp_sum, key):
+
+    delays = uvp_sum.get_dlys(key[0]) * 1e9 #in ns
+
+    #EOR + FG
+    P_sum_real = abs(
+        np.squeeze(
+            uvp_sum.get_data(key).real
+        )
+    )
+
+    P_sum_imag = abs(
+        np.squeeze(
+            uvp_sum.get_data(key).imag
+        )
+    )
+
+    PN = np.squeeze(uvp_sum.get_stats("P_N", key))
+
+    delays_positive = delays > 0
+    delays_negative = delays < 0
+
+    tau_neg = delays[delays_negative]
+    tau_pos = delays[delays_positive]
+
+    PN_neg = PN[delays_negative]
+    PN_pos = PN[delays_positive]
+
+    delta2_PN_neg = abs(abs(tau_neg)**3 * PN_neg)
+    delta2_PN_pos = abs(tau_pos**3 * PN_pos)
+
+    P_sum_real_neg = P_sum_real[delays_negative]
+    P_sum_real_pos = P_sum_real[delays_positive]
+
+    delta2_sum_real_neg = abs(abs(tau_neg)**3 * P_sum_real_neg)
+    delta2_sum_real_pos = abs(tau_pos**3 * P_sum_real_pos)
+
+    h_real_neg = abs(delta2_sum_real_neg - delta2_PN_neg)
+    h_real_pos = abs(delta2_sum_real_pos - delta2_PN_pos)
+
+    bin_real_neg_hw = np.argmin(h_real_neg)
+    bin_real_pos_hw = np.argmin(h_real_pos)
+
+    real_hw_avg = abs(abs(delays[delays_negative][bin_real_neg_hw]) + delays[delays_positive][bin_real_pos_hw]) / 2.0
+
+    P_sum_imag_neg = P_sum_imag[delays_negative]
+    P_sum_imag_pos = P_sum_imag[delays_positive]
+    delta2_sum_imag_neg = abs(abs(tau_neg)**3 * P_sum_imag_neg)
+    delta2_sum_imag_pos = abs(tau_pos**3 * P_sum_imag_pos)
+
+    h_imag_neg = abs(delta2_sum_imag_neg - delta2_PN_neg)
+    h_imag_pos = abs(delta2_sum_imag_pos - delta2_PN_pos)
+
+    bin_imag_neg_hw = np.argmin(h_imag_neg)
+    bin_imag_pos_hw = np.argmin(h_imag_pos)
+
+    imag_hw_avg = abs(abs(delays[delays_negative][bin_imag_neg_hw]) + delays[delays_positive][bin_imag_pos_hw]) / 2.0
+
+    return (imag_hw_avg + real_hw_avg) / 2.0
+    
+
+
+def signal_loss_test(
+    delay_filtered_sum_pspec, 
+    unfiltered_eor_pspec,
+    hw_ns):
+    psc_sum = hp.PSpecContainer(delay_filtered_sum_pspec, mode="r")
+    psc_eor = hp.PSpecContainer(unfiltered_eor_pspec, mode="r")
+
+    uvp_sum = psc_sum.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    uvp_sum_folded = psc_sum.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    uvp_sum_folded.fold_spectra()
+
+    for key in uvp_sum.get_all_keys():
+        P_sum_real = np.squeeze(
+            uvp_sum_folded.get_data(key).real
+        )
+
+        P_sum_imag = np.squeeze(
+            uvp_sum_folded.get_data(key).imag
+        )
+
+        delays = np.squeeze(
+            uvp_sum_folded.get_dlys(key[0])
+        )
+
+        delays_ns = delays * 1e9
+
+        PN = np.squeeze(uvp_sum_folded.get_stats("P_N", key))
+        delta_2_PN = abs(delays_ns**3 * PN)
+
+        delta_2_sum_real = abs(delays_ns**3 * P_sum_real)
+        delta_2_sum_imag = abs(delays_ns**3 * P_sum_imag)
+
+        true_hw = find_true_hw(uvp_sum, key)
+        print(f"The true hw for spectral window {key[0]} was {true_hw}")
+        bin_hw_index = np.argmin(np.abs(delays_ns - true_hw))
+
+        R_real = delta_2_sum_real / delta_2_PN
+        R_imag = delta_2_sum_imag / delta_2_PN
+
+        count_outside_2sigma_real = 0
+        count_outside_2sigma_imag = 0
+        n = len(delays_ns) - bin_hw_index
+        for i in range(bin_hw_index, len(delays_ns)):
+            if R_real[i] > 2.0 : count_outside_2sigma_real += 1
+            if R_imag[i] > 2.0 : count_outside_2sigma_imag += 1
+
+        frac_real_outside = count_outside_2sigma_real / n
+        frac_imag_outside = count_outside_2sigma_imag / n
+
+        print(f"Spectral window index: {key[0]}")
+        print(f"Fraction (real) of pspec outside of noise: {frac_real_outside}")
+        print(f"Fraction (complex) of pspec outside of noise: {frac_imag_outside}\n")
+
+
 
 
 def process_data():
@@ -345,7 +784,27 @@ def process_data():
             hw = float(line.split(',')[1]) #Seond argument in csv file of first line is the half width of the delay filter.
         #hw in nanoseconds btw
 
-        plot_delta2_tau(on_delay_file_pspec, eor_file_pspec, bl_pair_comparative_plots_folder, hw)
+        plot_delta2_tau(
+            off_delay_file_pspec,
+            on_delay_file_pspec, 
+            eor_file_pspec, 
+            bl_pair_comparative_plots_folder, 
+            hw
+        )
+
+        plot_delta2_tau_signed(
+            off_delay_file_pspec,
+            on_delay_file_pspec,
+            eor_file_pspec,
+            bl_pair_comparative_plots_folder,
+            hw
+        )
+
+        signal_loss_test(
+            on_delay_file_pspec, 
+            off_delay_file_pspec, 
+            hw
+        )
 
 
 def main():
