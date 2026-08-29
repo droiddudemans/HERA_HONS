@@ -1,0 +1,8 @@
+Findings for today (HERA):
+
+WEDGE + BUFFER DELAY INVESTIGATION:
+->WEDGE + BUFFER just means delay filter bound + standoff (defined in toml)
+->bl_dly = max(horizon * bl_len + standoff, min_dly)
+->The delay filter itself does not change power beyond the bl_delay.
+=>The issue of the delay filtered PSPEC being larger than the unfiltered PSPEC right outside the bl_delay is
+  not caused by the delay filter process itself
