@@ -217,7 +217,6 @@ def plot_delta2_tau_signed(
             delays_ns[positive_unfiltered],
             abs(delta2_unfiltered[positive_unfiltered]),
             lw = 2,
-            linestyle = "--",
             color = "orange",
         )
 
