@@ -25,7 +25,6 @@ for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
 
 IS_INPAINT_HERE = False
 
-
 def plot_delta2_tau_signed(
     unfiltered_pspec_file,
     delay_pspec_file,
@@ -314,6 +313,8 @@ def plot_delta2_tau(
 
     comparing delay-filtered EOR + foregrounds against
     unfiltered EOR only.
+
+    This is unsigned in tau.
 
     delay_hw is in nanoseconds.
     """

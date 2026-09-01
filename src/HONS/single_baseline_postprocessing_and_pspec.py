@@ -726,7 +726,245 @@ def build_weights(data, flags, nsamples, wgt_by_avg_nsamples=False, band_slices=
 
 # %%
 # Build weights for delay-filter and/or inpainting that don't involve any Nsample averaging
-freq_filt_wgts = build_weights(data, flags, nsamples) 
+freq_filt_wgts = build_weights(data, flags, nsamples)
+
+# ============================================================
+# DIAGNOSTIC: Delay response of high-band frequency weighting
+# across all LSTs
+# ============================================================
+
+# ------------------------------------------------------------
+# Output directory
+# ------------------------------------------------------------
+# Uses the antenna pair, e.g. "0_2", as the folder name.
+baseline_name = f"{ANTPAIR[0]}_{ANTPAIR[1]}"
+output_dir = Path("weight_psf_diagnostics") / baseline_name
+output_dir.mkdir(parents=True, exist_ok=True)
+
+
+# ------------------------------------------------------------
+# Select baseline
+# ------------------------------------------------------------
+bl = cross_bls[0]
+
+freqs_high = data.freqs[high_band]
+Nfreq = len(freqs_high)
+
+# Frequency spacing
+df = np.median(np.diff(freqs_high))
+
+# Delay axis
+delays_ns = (
+    np.fft.fftshift(
+        np.fft.fftfreq(Nfreq, d=df)
+    ) * 1e9
+)
+
+
+# ------------------------------------------------------------
+# Get LST axis
+# ------------------------------------------------------------
+# Replace this with your actual LST array if it has a different name.
+# The important thing is that lsts[i] corresponds to
+# flags[bl][i, high_band] and freq_filt_wgts[bl][i, high_band].
+lsts = data.times
+
+
+# ------------------------------------------------------------
+# Build frequency-domain weighting arrays
+# ------------------------------------------------------------
+# Shape:
+#     (Ntime, Nfreq)
+#
+# Each row corresponds to one LST/time.
+w_mask = (~flags[bl][:, high_band]).astype(float)
+
+w_actual = freq_filt_wgts[bl][:, high_band]
+
+
+# ------------------------------------------------------------
+# Apply the same taper used for the power spectrum
+# ------------------------------------------------------------
+taper = dspec.gen_window(TAPER, Nfreq)
+
+w_mask_tapered = w_mask * taper[None, :]
+w_actual_tapered = w_actual * taper[None, :]
+
+
+# ------------------------------------------------------------
+# Fourier transform frequency axis for EVERY LST
+# ------------------------------------------------------------
+W_mask = np.fft.fftshift(
+    np.fft.fft(w_mask_tapered, axis=1),
+    axes=1
+)
+
+W_actual = np.fft.fftshift(
+    np.fft.fft(w_actual_tapered, axis=1),
+    axes=1
+)
+
+
+# ------------------------------------------------------------
+# Delay-domain power
+# ------------------------------------------------------------
+PSF_mask = np.abs(W_mask)**2
+PSF_actual = np.abs(W_actual)**2
+
+
+# ------------------------------------------------------------
+# Restrict delay range for plotting
+# ------------------------------------------------------------
+delay_cut = 2000  # ns
+
+delay_sel = np.abs(delays_ns) <= delay_cut
+
+
+# ------------------------------------------------------------
+# Plot binary-mask waterfall
+# ------------------------------------------------------------
+plt.figure(figsize=(12, 6))
+
+plt.imshow(
+    PSF_mask[:, delay_sel],
+    aspect='auto',
+    origin='lower',
+    extent=[
+        delays_ns[delay_sel][0],
+        delays_ns[delay_sel][-1],
+        lsts[0],
+        lsts[-1]
+    ]
+)
+
+plt.xlabel('Delay (ns)')
+plt.ylabel('LST')
+plt.title(
+    f'Binary Flagging Mask Delay PSF — Baseline {baseline_name}'
+)
+
+plt.colorbar(label=r'$|\widetilde{W}(\tau)|^2$')
+
+plt.tight_layout()
+
+plt.savefig(
+    output_dir / f"{baseline_name}_mask_weight_psf_waterfall.png",
+    dpi=150,
+    bbox_inches='tight'
+)
+
+plt.show()
+plt.close()
+
+
+# ------------------------------------------------------------
+# Plot actual-weight waterfall
+# ------------------------------------------------------------
+plt.figure(figsize=(12, 6))
+
+plt.imshow(
+    PSF_actual[:, delay_sel],
+    aspect='auto',
+    origin='lower',
+    extent=[
+        delays_ns[delay_sel][0],
+        delays_ns[delay_sel][-1],
+        lsts[0],
+        lsts[-1]
+    ]
+)
+
+plt.xlabel('Delay (ns)')
+plt.ylabel('LST')
+plt.title(
+    f'Actual Frequency-Weight Delay PSF — Baseline {baseline_name}'
+)
+
+plt.colorbar(label=r'$|\widetilde{W}(\tau)|^2$')
+
+plt.tight_layout()
+
+plt.savefig(
+    output_dir / f"{baseline_name}_actual_weight_psf_waterfall.png",
+    dpi=150,
+    bbox_inches='tight'
+)
+
+plt.show()
+plt.close()
+
+
+# ------------------------------------------------------------
+# Plot actual weights / binary mask side-by-side as waterfalls
+# ------------------------------------------------------------
+fig, axes = plt.subplots(
+    2, 1,
+    figsize=(12, 10),
+    sharex=True,
+    sharey=True
+)
+
+im0 = axes[0].imshow(
+    PSF_mask[:, delay_sel],
+    aspect='auto',
+    origin='lower',
+    extent=[
+        delays_ns[delay_sel][0],
+        delays_ns[delay_sel][-1],
+        lsts[0],
+        lsts[-1]
+    ]
+)
+
+axes[0].set_ylabel('LST')
+axes[0].set_title('Binary Flagging Mask')
+
+fig.colorbar(
+    im0,
+    ax=axes[0],
+    label=r'$|\widetilde{W}(\tau)|^2$'
+)
+
+
+im1 = axes[1].imshow(
+    PSF_actual[:, delay_sel],
+    aspect='auto',
+    origin='lower',
+    extent=[
+        delays_ns[delay_sel][0],
+        delays_ns[delay_sel][-1],
+        lsts[0],
+        lsts[-1]
+    ]
+)
+
+axes[1].set_xlabel('Delay (ns)')
+axes[1].set_ylabel('LST')
+axes[1].set_title('Actual Frequency Weights')
+
+fig.colorbar(
+    im1,
+    ax=axes[1],
+    label=r'$|\widetilde{W}(\tau)|^2$'
+)
+
+fig.suptitle(
+    f'High-Band Weighting PSF Across LST — Baseline {baseline_name}'
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    output_dir / f"{baseline_name}_weight_psf_waterfalls.png",
+    dpi=150,
+    bbox_inches='tight'
+)
+
+plt.show()
+plt.close()
+
+
+print(f"Saved diagnostics to: {output_dir}")
 
 # %%
 # Inpaint autocorrelations to allow for prediction of thermal noise on every channel
