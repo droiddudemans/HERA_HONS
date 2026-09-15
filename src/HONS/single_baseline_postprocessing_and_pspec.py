@@ -80,6 +80,7 @@ import toml
 
 #Global tracker vars
 is_delay_analysis = False
+REMOVE_FLAGS: bool
 
 # Settings configurable via env vars (typically set by the bash wrapper).
 SINGLE_BL_FILE: str
@@ -101,19 +102,21 @@ for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
 
 
 # Settings configurable via env vars (typically set by the bash wrapper). Continued.
-if __name__ == "__main__" and len(sys.argv) == 6:
+if __name__ == "__main__" and len(sys.argv) == 8:
     # Means the file that imported this file is giving us the single bl file to work with.
     input_file = Path(sys.argv[1])
     output_dir = Path(sys.argv[3])
 
     PERFORM_DLY_FILT = sys.argv[2].lower() == "true"
     OUT_PSPEC_FILE = output_dir / f"{input_file.stem}.pspec.h5"
-    OUT_TAVG_PSPEC_FILE = PERFORM_DLY_FILT and output_dir / f"{input_file.stem}_cutoff_{sys.argv[4]}.tavg.pspec.h5" or (
+    OUT_TAVG_PSPEC_FILE = PERFORM_DLY_FILT and output_dir / f"{input_file.stem}.tavg.pspec.h5" or (
         output_dir / f"{input_file.stem}.tavg.pspec.h5")
-    OUT_BL_DELAY_RANGE_FILE = output_dir / f"{input_file.stem}_cutoff_{sys.argv[4]}.tavg.delay_filter_hw.csv"
+    OUT_BL_DELAY_RANGE_FILE = output_dir / f"{input_file.stem}.tavg.delay_filter_hw.csv"
     SINGLE_BL_FILE = str(input_file)
-    DLY_FILT_MIN_DLY = int(sys.argv[4])
+    DLY_FILT_STANDOFF = int(sys.argv[4])
     PERFORM_INPAINT = sys.argv[5].lower() == "true"
+    DLY_FILT_EIGENVAL_CUTOFF = float(sys.argv[6])
+    REMOVE_FLAGS = sys.argv[7].lower() == "true"
 
     is_delay_analysis = True
     print("Override default params.")
@@ -124,6 +127,7 @@ else:
         str(Path(SINGLE_BL_FILE).with_suffix('.pspec.h5')))
     OUT_TAVG_PSPEC_FILE = os.environ.get('OUT_TAVG_PSPEC_FILE',
         str(Path(SINGLE_BL_FILE).with_suffix('.tavg.pspec.h5')))
+    REMOVE_FLAGS = False
 
 for setting in ['TOML_FILE', 'SINGLE_BL_FILE', 'OUT_PSPEC_FILE', 'OUT_TAVG_PSPEC_FILE']:
     print(f'{setting} = "{eval(setting)}"')
@@ -500,23 +504,39 @@ def plot_dly_vs_fr(data, bl=(ANTPAIR + ('ee',)), xlim=[-1999, 1999], ylim=[-5, 5
 # ### Filtering and Post-Processing Functions
 
 # %%
-def delay_filter(data, wgts, filter_centers, filter_half_widths, eigenval_cutoff, cache={}, bls=None, zeros_where_zero_wgt=True):
+def delay_filter(data, wgts, filter_centers, filter_half_widths, eigenval_cutoff, cache={}, bls=None, zeros_where_zero_wgt=True, remove_flags = False):
     '''This function performs a high-pass delay filter, removing the wedge plus some buffer. It also performs inpainting with the same delay.'''
     dly_filt_data = copy.deepcopy(data)
     inpainted_data = copy.deepcopy(data)
+
     if bls is None:
         bls = cross_bls
     
     for bl in bls:
         d_mdl = np.zeros_like(dly_filt_data[bl])
+        filter_wgts = np.ones_like(wgts[bl])
         for band in [low_band, high_band]:
             if band.start >= band.stop:
                 # This can happen if the frequencies are all above/below FM
                 continue
-            d_mdl[:, band], _, info = dspec.fourier_filter(data.freqs[band], dly_filt_data[bl][:, band], wgts=wgts[bl][:, band], filter_centers=filter_centers, 
-                                                           filter_half_widths=filter_half_widths, mode='dpss_solve', 
-                                                           eigenval_cutoff=[eigenval_cutoff], suppression_factors=[eigenval_cutoff], 
-                                                           max_contiguous_edge_flags=len(data.freqs), cache=cache)
+            
+            if remove_flags:
+                filter_wgts = np.ones_like(wgts[bl])
+            else:
+                filter_wgts = wgts[bl]
+
+            d_mdl[:, band], _, info = dspec.fourier_filter(
+                data.freqs[band],
+                dly_filt_data[bl][:, band],
+                wgts=filter_wgts[:, band],
+                filter_centers=filter_centers,
+                filter_half_widths=filter_half_widths,
+                mode='dpss_solve',
+                eigenval_cutoff=[eigenval_cutoff],
+                suppression_factors=[eigenval_cutoff],
+                max_contiguous_edge_flags=len(data.freqs),
+                cache=cache
+            )
         if zeros_where_zero_wgt:
             dly_filt_data[bl] = np.where(wgts[bl] == 0, 0, dly_filt_data[bl] - d_mdl)
         else:
@@ -728,243 +748,6 @@ def build_weights(data, flags, nsamples, wgt_by_avg_nsamples=False, band_slices=
 # Build weights for delay-filter and/or inpainting that don't involve any Nsample averaging
 freq_filt_wgts = build_weights(data, flags, nsamples)
 
-# ============================================================
-# DIAGNOSTIC: Delay response of high-band frequency weighting
-# across all LSTs
-# ============================================================
-
-# ------------------------------------------------------------
-# Output directory
-# ------------------------------------------------------------
-# Uses the antenna pair, e.g. "0_2", as the folder name.
-baseline_name = f"{ANTPAIR[0]}_{ANTPAIR[1]}"
-output_dir = Path("weight_psf_diagnostics") / baseline_name
-output_dir.mkdir(parents=True, exist_ok=True)
-
-
-# ------------------------------------------------------------
-# Select baseline
-# ------------------------------------------------------------
-bl = cross_bls[0]
-
-freqs_high = data.freqs[high_band]
-Nfreq = len(freqs_high)
-
-# Frequency spacing
-df = np.median(np.diff(freqs_high))
-
-# Delay axis
-delays_ns = (
-    np.fft.fftshift(
-        np.fft.fftfreq(Nfreq, d=df)
-    ) * 1e9
-)
-
-
-# ------------------------------------------------------------
-# Get LST axis
-# ------------------------------------------------------------
-# Replace this with your actual LST array if it has a different name.
-# The important thing is that lsts[i] corresponds to
-# flags[bl][i, high_band] and freq_filt_wgts[bl][i, high_band].
-lsts = data.times
-
-
-# ------------------------------------------------------------
-# Build frequency-domain weighting arrays
-# ------------------------------------------------------------
-# Shape:
-#     (Ntime, Nfreq)
-#
-# Each row corresponds to one LST/time.
-w_mask = (~flags[bl][:, high_band]).astype(float)
-
-w_actual = freq_filt_wgts[bl][:, high_band]
-
-
-# ------------------------------------------------------------
-# Apply the same taper used for the power spectrum
-# ------------------------------------------------------------
-taper = dspec.gen_window(TAPER, Nfreq)
-
-w_mask_tapered = w_mask * taper[None, :]
-w_actual_tapered = w_actual * taper[None, :]
-
-
-# ------------------------------------------------------------
-# Fourier transform frequency axis for EVERY LST
-# ------------------------------------------------------------
-W_mask = np.fft.fftshift(
-    np.fft.fft(w_mask_tapered, axis=1),
-    axes=1
-)
-
-W_actual = np.fft.fftshift(
-    np.fft.fft(w_actual_tapered, axis=1),
-    axes=1
-)
-
-
-# ------------------------------------------------------------
-# Delay-domain power
-# ------------------------------------------------------------
-PSF_mask = np.abs(W_mask)**2
-PSF_actual = np.abs(W_actual)**2
-
-
-# ------------------------------------------------------------
-# Restrict delay range for plotting
-# ------------------------------------------------------------
-delay_cut = 2000  # ns
-
-delay_sel = np.abs(delays_ns) <= delay_cut
-
-
-# ------------------------------------------------------------
-# Plot binary-mask waterfall
-# ------------------------------------------------------------
-plt.figure(figsize=(12, 6))
-
-plt.imshow(
-    PSF_mask[:, delay_sel],
-    aspect='auto',
-    origin='lower',
-    extent=[
-        delays_ns[delay_sel][0],
-        delays_ns[delay_sel][-1],
-        lsts[0],
-        lsts[-1]
-    ]
-)
-
-plt.xlabel('Delay (ns)')
-plt.ylabel('LST')
-plt.title(
-    f'Binary Flagging Mask Delay PSF — Baseline {baseline_name}'
-)
-
-plt.colorbar(label=r'$|\widetilde{W}(\tau)|^2$')
-
-plt.tight_layout()
-
-plt.savefig(
-    output_dir / f"{baseline_name}_mask_weight_psf_waterfall.png",
-    dpi=150,
-    bbox_inches='tight'
-)
-
-plt.show()
-plt.close()
-
-
-# ------------------------------------------------------------
-# Plot actual-weight waterfall
-# ------------------------------------------------------------
-plt.figure(figsize=(12, 6))
-
-plt.imshow(
-    PSF_actual[:, delay_sel],
-    aspect='auto',
-    origin='lower',
-    extent=[
-        delays_ns[delay_sel][0],
-        delays_ns[delay_sel][-1],
-        lsts[0],
-        lsts[-1]
-    ]
-)
-
-plt.xlabel('Delay (ns)')
-plt.ylabel('LST')
-plt.title(
-    f'Actual Frequency-Weight Delay PSF — Baseline {baseline_name}'
-)
-
-plt.colorbar(label=r'$|\widetilde{W}(\tau)|^2$')
-
-plt.tight_layout()
-
-plt.savefig(
-    output_dir / f"{baseline_name}_actual_weight_psf_waterfall.png",
-    dpi=150,
-    bbox_inches='tight'
-)
-
-plt.show()
-plt.close()
-
-
-# ------------------------------------------------------------
-# Plot actual weights / binary mask side-by-side as waterfalls
-# ------------------------------------------------------------
-fig, axes = plt.subplots(
-    2, 1,
-    figsize=(12, 10),
-    sharex=True,
-    sharey=True
-)
-
-im0 = axes[0].imshow(
-    PSF_mask[:, delay_sel],
-    aspect='auto',
-    origin='lower',
-    extent=[
-        delays_ns[delay_sel][0],
-        delays_ns[delay_sel][-1],
-        lsts[0],
-        lsts[-1]
-    ]
-)
-
-axes[0].set_ylabel('LST')
-axes[0].set_title('Binary Flagging Mask')
-
-fig.colorbar(
-    im0,
-    ax=axes[0],
-    label=r'$|\widetilde{W}(\tau)|^2$'
-)
-
-
-im1 = axes[1].imshow(
-    PSF_actual[:, delay_sel],
-    aspect='auto',
-    origin='lower',
-    extent=[
-        delays_ns[delay_sel][0],
-        delays_ns[delay_sel][-1],
-        lsts[0],
-        lsts[-1]
-    ]
-)
-
-axes[1].set_xlabel('Delay (ns)')
-axes[1].set_ylabel('LST')
-axes[1].set_title('Actual Frequency Weights')
-
-fig.colorbar(
-    im1,
-    ax=axes[1],
-    label=r'$|\widetilde{W}(\tau)|^2$'
-)
-
-fig.suptitle(
-    f'High-Band Weighting PSF Across LST — Baseline {baseline_name}'
-)
-
-plt.tight_layout()
-
-plt.savefig(
-    output_dir / f"{baseline_name}_weight_psf_waterfalls.png",
-    dpi=150,
-    bbox_inches='tight'
-)
-
-plt.show()
-plt.close()
-
-
-print(f"Saved diagnostics to: {output_dir}")
 
 # %%
 # Inpaint autocorrelations to allow for prediction of thermal noise on every channel
@@ -1006,7 +789,7 @@ inpainted = copy.deepcopy(filt_data)
 # %%
 # perform delay filtering on crosses
 if PERFORM_DLY_FILT:
-    filt_data, _ = delay_filter(inpainted, freq_filt_wgts, dly_filter_centers, dly_filter_half_widths, DLY_FILT_EIGENVAL_CUTOFF, zeros_where_zero_wgt=False)
+    filt_data, _ = delay_filter(inpainted, freq_filt_wgts, dly_filter_centers, dly_filter_half_widths, DLY_FILT_EIGENVAL_CUTOFF, zeros_where_zero_wgt=False, remove_flags=REMOVE_FLAGS)
 
 # %%
 # Recompute time filter flags, averaging nsamples in subbands if desired (this also applies to further processing)

@@ -12,6 +12,7 @@ output/
 validation_data/
 validation_out/eor_foregrounds_pspec/
 validation_out/eor_only_pspec/
+validation_out/pspec_outside_noise/
 
 # Distribution / packaging
 .Python
