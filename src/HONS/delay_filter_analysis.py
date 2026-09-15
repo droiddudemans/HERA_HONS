@@ -141,6 +141,7 @@ def test_delay_cutoff():
         current_delay -= DECR_DELAY
 
 def test_inpainting():
+
     MIN_DELAY_TEST = 150
     IS_INPAINT_HERE = True
     output_inpaint_delay_on = output_dir_inpaint_test / "delay_filter_on"
@@ -183,7 +184,38 @@ def test_inpainting():
         output_dir_inpaint_test,
     )
 
+def count_num_amplified_bl(no_delay_pspec_file, delay_pspec_file):
+    '''Counts & returns how many bins have the filtered signal larger than the unfiltered accross all spectral windows for the given baseline.'''
+    psc_yes = hp.PSpecContainer(delay_pspec_file, mode="r")
+    psc_no = hp.PSpecContainer(no_delay_pspec_file, mode='r')
+
+    uvp_yes = psc_yes.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    uvp_no = psc_no.get_pspec(
+        "stokespol",
+        "time_and_interleave_averaged"
+    )
+
+    count_larger = 0
+
+    for _, key in enumerate(uvp_no.get_all_keys()):
+        P_before = np.squeeze(uvp_no.get_data(key).real)
+        P_after = np.squeeze(uvp_yes.get_data(key).real)
+
+        larger = P_after > P_before
+        P_larger = P_after[larger]
+        count_larger += len(P_larger)
+
+    psc_yes._close()
+    psc_no._close()
+
+    return count_larger
+
 def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
+    windows_to_plot = [0, 2, 4, 6, 8, 10]
     psc_yes = hp.PSpecContainer(delay_pspec_file, mode="r")
     psc_no = hp.PSpecContainer(no_delay_pspec_file, mode='r')
 
@@ -204,6 +236,8 @@ def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
     fig_norm_diff, ax_norm = plt.subplots(figsize=(10, 4))
 
     summary = []
+    keys_array = []
+    amplified_count = []
 
     delay_hw_s = delay_hw * 1e-9
 
@@ -212,6 +246,12 @@ def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
     for i, key in enumerate(uvp_no.get_all_keys()):
         P_before = np.squeeze(uvp_no.get_data(key).real)
         P_after = np.squeeze(uvp_yes.get_data(key).real)
+
+        larger = P_after > P_before
+        P_larger = P_after[larger]
+        num_larger = len(P_larger)
+        keys_array.append(key[0])
+        amplified_count.append(num_larger)
 
         PN_before = np.squeeze(uvp_no.get_stats("P_N", key))
 
@@ -296,11 +336,15 @@ def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
 
         # ------------------------------------------------------------
         # Plot ALL points, including the filtered/central region.
+        # We do not plot points that aren't in the window list.
         #
         # We clip only the plotted z values so large z values do not
         # dominate the y-axis. The original z values are unchanged and
         # are still used for the statistics above.
         # ------------------------------------------------------------
+
+        if not key[0] in windows_to_plot: 
+            continue
 
         delays_plot_ns = delays_finite * 1e9
 
@@ -388,6 +432,19 @@ def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
 
     plt.close(fig_norm_diff)
 
+
+    spw_indices = np.arange(len(amplified_count))
+    fig_amp_count = plt.figure("AmpCountFig", figsize = (10, 4), dpi = 300)
+    plt.bar(spw_indices, amplified_count)
+    plt.xticks(range(len(amplified_count))) 
+    plt.xlabel("Spectral window index i")
+    plt.ylabel("COUNT(amplified bins)")
+    plt.title(f"Number of amplified PSPEC bins in spectral window {key[0]}")
+    plt.savefig(z_out_dir / "num_amplified_bins_windows.png")
+
+    plt.show()
+    plt.close(fig_amp_count)
+
     # Save summary.
     summary_df = pd.DataFrame(summary)
     summary_df.to_csv(
@@ -397,8 +454,23 @@ def z_analysis(no_delay_pspec_file, delay_pspec_file, z_out_dir, delay_hw):
 
     print(f"Saved summary to {z_out_dir/'normalized_difference_summary.csv'}")
 
+    psc_no._close()
+    psc_yes._close()
+
+
 def test_P_N():
     IS_INPAINT_HERE = False
+    # Keep track of how the number of amplified filter signal bins compared to unfiltered changes over baseline hw.
+    bl_nominal_hw = []
+    num_amplified = []
+    z_out_main_dir = (
+        Path(__file__).parent.parent.parent
+        / "output"
+        / "thermal_noise_test"
+        / "z_out"
+    )
+
+    # Go over each bl
     for input_file in input_dir_raw.glob("*.uvh5"):
         pair = input_file.name.split(".")[3]
         bl_pair_folder_name = "BLPAIR_" + pair
@@ -444,7 +516,8 @@ def test_P_N():
                     "False",
                     str(output_dir_no_delay_filter.absolute()),
                     str(DLY_FILT_MIN_DLY),
-                    str(IS_INPAINT_HERE)
+                    str(IS_INPAINT_HERE),
+                    str(DLY_FILT_EIGENVAL_CUTOFF)
                 ], check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Exception in subprocess. Failed with error: {e.returncode}")
@@ -463,7 +536,8 @@ def test_P_N():
                     "True",
                     str(output_dir_delay_filter.absolute()),
                     str(DLY_FILT_MIN_DLY),
-                    str(IS_INPAINT_HERE)
+                    str(IS_INPAINT_HERE),
+                    str(DLY_FILT_EIGENVAL_CUTOFF)
                 ], check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Exception in subprocess. Failed with error: {e.returncode}")
@@ -471,8 +545,8 @@ def test_P_N():
             print(f"Skipping existing delay-filtered pspec: {delay.name}")
 
         no_delay = output_dir_no_delay_filter / f"{input_file.stem}.tavg.pspec.h5"
-        delay = output_dir_delay_filter / f"{input_file.stem}_cutoff_{DLY_FILT_MIN_DLY}.tavg.pspec.h5"
-        delay_hw = output_dir_delay_filter / f"{input_file.stem}_cutoff_{DLY_FILT_MIN_DLY}.tavg.delay_filter_hw.csv"
+        delay = output_dir_delay_filter / f"{input_file.stem}.tavg.pspec.h5"
+        delay_hw = output_dir_delay_filter / f"{input_file.stem}.tavg.delay_filter_hw.csv"
 
         hw = 0
         print("Got to before z analysis")
@@ -481,6 +555,20 @@ def test_P_N():
             hw = float(line.split(',')[1]) #Seond argument in csv file of first line is the half width of the delay filter.
 
         z_analysis(no_delay, delay, z_out_dir, hw)
+
+        bl_nominal_hw.append(hw)
+        num_amplified.append(count_num_amplified_bl(no_delay, delay))
+
+    fig_amplified = plt.figure("amp_fig_bl")
+
+    plt.scatter(bl_nominal_hw, num_amplified, marker = 's')
+    plt.title("Number of amplified bins for different baseline nominal half-widths")
+    plt.xlabel("Nominal baseline half-width (ns)")
+    plt.ylabel("COUNT(amplified bins)")
+
+    plt.savefig(z_out_main_dir / "num_amplified_bins_bl.png")
+    plt.show()
+    plt.close(fig_amplified)
 
 
 def main(mode):
