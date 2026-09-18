@@ -1,11 +1,16 @@
-import sys
 import os
-import toml
 import subprocess
-import plotting
+import sys
 from pathlib import Path
 
-# GLOBAL CONSTANTS
+import plotting
+import toml
+
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
 EV_CUTOFF_TO_TEST = [
     1e-12,
     1e-10,
@@ -24,231 +29,466 @@ EV_CUTOFF_TO_TEST = [
     0.95,
     0.99,
     0.999,
-    1.0 - 1e-4,
-    1.0 - 1e-6,
-    1.0 - 1e-8,
-    1.0 - 1e-10,
-    1.0 - 1e-12
 ]
 
+EV_CUTOFF_TO_PLOT = [
+    1e-12,
+    1e-10,
+    1e-6,
+]
 
-#LOADING TOML CONFIGS
-TOML_FILE = os.environ.get('TOML_FILE',
-        '/home/Kwuzard/Projects/HERA_HONS/src/HONS/h6c_pspec_11band.toml')
-
-# Load configuration from the toml and inject into globals.
-toml_options = toml.load(TOML_FILE)
-for toml_section in ['GLOBAL_OPTS', 'POSTPROCESS_AND_PSPEC_OPTS']:
-    if toml_section not in toml_options:
-        continue
-    print(f'\nLoading config from [{toml_section}] in {TOML_FILE}:')
-    for key, val in toml_options[toml_section].items():
-        globals()[key.upper()] = val
-        print(f'  {key.upper()} = {val!r}')
-
-# GLOBAL SETTINGS
+IS_LOG_SCALE = False
 IS_INPAINT_HERE = False
+IS_REMOVE_FLAGS = False
+
+TOML_FILE = os.environ.get(
+    "TOML_FILE",
+    "/home/Kwuzard/Projects/HERA_HONS/src/HONS/h6c_pspec_11band.toml",
+)
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+POSTPROCESSING_SCRIPT = SCRIPT_DIR / "single_baseline_postprocessing_and_pspec.py"
+
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+def load_config(toml_file: str | Path) -> None:
+    """
+    Load configuration options from the TOML file into the global namespace.
+
+    Configuration is loaded from:
+        [GLOBAL_OPTS]
+        [POSTPROCESS_AND_PSPEC_OPTS]
+    """
+    toml_options = toml.load(toml_file)
+
+    for section in ["GLOBAL_OPTS", "POSTPROCESS_AND_PSPEC_OPTS"]:
+        if section not in toml_options:
+            continue
+
+        print(f"\nLoading config from [{section}] in {toml_file}:")
+
+        for key, value in toml_options[section].items():
+            globals()[key.upper()] = value
+            print(f"  {key.upper()} = {value!r}")
+
+
+# ============================================================================
+# PATHS
+# ============================================================================
+
+def get_output_directories() -> dict[str, Path]:
+    """
+    Construct all validation input/output directories.
+    """
+    validation_dir = (
+        Path(__file__).resolve().parent.parent.parent / "validation_data"
+    )
+
+    return {
+        "validation": validation_dir,
+        "eor_foregrounds": validation_dir / "eor_and_foregrounds",
+        "eor_only": validation_dir / "eor_only",
+        "output": (
+            Path(__file__).resolve().parent.parent.parent
+            / "output"
+            / "eigenvalue_test"
+        ),
+    }
+
+
+def create_output_directories(directories: dict[str, Path]) -> None:
+    """
+    Create all directories required by the processing pipeline.
+    """
+    validation_dir = directories["validation"]
+    output_dir = directories["output"]
+
+    directories_to_create = [
+        validation_dir,
+        directories["eor_foregrounds"],
+        directories["eor_only"],
+        output_dir,
+        output_dir / "plots",
+        output_dir / "eor_foregrounds_sum_pspec",
+        output_dir / "eor_only_pspec",
+    ]
+
+    for directory in directories_to_create:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================================
+# SUBPROCESS / PSPEC PROCESSING
+# ============================================================================
+
+def run_postprocessing(
+    input_file: Path,
+    delay_filter: bool,
+    output_dir: Path,
+    eigenvalue_cutoff: float,
+) -> bool:
+    """
+    Run the single-baseline postprocessing script.
+
+    Returns
+    -------
+    bool
+        True if processing succeeded, False otherwise.
+    """
+    command = [
+        sys.executable,
+        str(POSTPROCESSING_SCRIPT),
+        str(input_file),
+        str(delay_filter),
+        str(output_dir),
+        str(DLY_FILT_STANDOFF),
+        str(IS_INPAINT_HERE),
+        str(eigenvalue_cutoff),
+        str(IS_REMOVE_FLAGS),
+    ]
+
+    try:
+        subprocess.run(command, check=True)
+        return True
+
+    except subprocess.CalledProcessError as error:
+        print(
+            f"Postprocessing failed for {input_file.name} "
+            f"(return code: {error.returncode})"
+        )
+        return False
+
+
+def process_no_delay_pspec(
+    input_file: Path,
+    output_dir: Path,
+    eigenvalue_cutoff: float,
+) -> None:
+    """
+    Generate a PSPEC without delay filtering if it does not already exist.
+    """
+    pspec_file = output_dir / f"{input_file.stem}.tavg.pspec.h5"
+
+    if pspec_file.is_file():
+        print(f"Skipping existing no-delay pspec: {pspec_file.name}")
+        return
+
+    print(f"Processing file without delay filter: {input_file.name}")
+
+    run_postprocessing(
+        input_file=input_file,
+        delay_filter=False,
+        output_dir=output_dir,
+        eigenvalue_cutoff=eigenvalue_cutoff,
+    )
+
+
+def process_delay_filtered_pspec(
+    input_file: Path,
+    output_dir: Path,
+    eigenvalue_cutoff: float,
+) -> bool:
+    """
+    Generate a delay-filtered PSPEC if it does not already exist.
+
+    Returns
+    -------
+    bool
+        True if the PSPEC exists after processing, False if processing failed.
+    """
+    pspec_file = output_dir / f"{input_file.stem}.tavg.pspec.h5"
+
+    if pspec_file.is_file():
+        print(f"Skipping existing delay-filtered pspec: {pspec_file.name}")
+        return True
+
+    print(
+        f"Processing file with delay filter: {input_file.name} "
+        f"(EV cutoff = {eigenvalue_cutoff:g})"
+    )
+
+    return run_postprocessing(
+        input_file=input_file,
+        delay_filter=True,
+        output_dir=output_dir,
+        eigenvalue_cutoff=eigenvalue_cutoff,
+    )
+
+
+# ============================================================================
+# DELAY FILTER WIDTH
+# ============================================================================
+
+def get_delay_filter_half_width(delay_hw_file: Path) -> float:
+    """
+    Read the delay-filter half width from the generated CSV file.
+
+    The half width is stored in the second column of the first row.
+    """
+    with delay_hw_file.open("r") as file:
+        first_line = file.readline()
+
+    return float(first_line.split(",")[1])
+
+
+# ============================================================================
+# PLOTTING
+# ============================================================================
 
 def plot_ev_comparative(
-    input_file,
-    bl_pair_folder_delay_on,
-    off_delay_file_pspec,
-    eor_file_pspec,
-    output_dir,
-    hw,
-    ev_failrues
-):
-    labels = [
-        f"EV cutoff: {cutoff}"
-        for cutoff in EV_CUTOFF_TO_TEST
-    ]
-
-
-    EV_CUTOFF_TO_PLOT = [
-        1e-12,
-        1e-10,
-        1e-8,
-        1e-6,
-        1e-2,
-        0.1,
-        0.5,
-        0.7,
-        0.9,
-        0.99,
-        1.0 - 1e-4,
-    ]
-
+    input_file: Path,
+    delay_on_dir: Path,
+    off_delay_file_pspec: Path,
+    eor_file_pspec: Path,
+    output_dir: Path,
+    half_width: float,
+    ev_cutoff_failures: list[float],
+) -> None:
+    """
+    Generate comparative plots for the selected eigenvalue cutoffs.
+    """
     delay_pspec_files = []
     labels = []
 
     for cutoff in EV_CUTOFF_TO_PLOT:
-        if cutoff in ev_failrues: continue
-        folder = bl_pair_folder_delay_on / f"ev_cutoff_{cutoff}"
+        if cutoff in ev_cutoff_failures:
+            print(
+                f"Skipping plot for EV cutoff {cutoff:g}: "
+                "PSPEC generation failed."
+            )
+            continue
 
-        matching_files = list(
-            folder.glob(f"{input_file.stem}.tavg.pspec.h5")
-        )
+        cutoff_dir = delay_on_dir / f"ev_cutoff_{cutoff}"
 
-        if not matching_files:
+        pspec_file = cutoff_dir / f"{input_file.stem}.tavg.pspec.h5"
+
+        if not pspec_file.is_file():
             raise FileNotFoundError(
-                f"Could not find PSPEC for cutoff {cutoff} in {folder}"
+                f"Could not find PSPEC for cutoff {cutoff:g} "
+                f"in {cutoff_dir}"
             )
 
-        delay_pspec_files.append(matching_files[0])
+        delay_pspec_files.append(pspec_file)
         labels.append(f"EV cutoff = {cutoff:g}")
-        
+
     plotting.plot_delta2_tau_multiple(
         off_delay_file_pspec,
         eor_file_pspec,
         delay_pspec_files,
         output_dir,
-        hw,
-        labels
+        half_width,
+        labels,
+        log_scale=IS_LOG_SCALE,
     )
-    
+
     plotting.plot_delta2_tau_signed_multiple(
         off_delay_file_pspec,
         eor_file_pspec,
         delay_pspec_files,
         output_dir,
-        hw,
-        labels
+        half_width,
+        labels,
+        log_scale=IS_LOG_SCALE,
     )
 
 
-def process_data():
-    directory_to_validation_datasets = Path(__file__).parent.parent.parent / "validation_data"
-    directory_to_eor_and_foregrounds = directory_to_validation_datasets / "eor_and_foregrounds"
-    directory_to_eor_only_datasets = directory_to_validation_datasets / "eor_only"
-    directory_to_validation_output = Path(__file__).parent.parent.parent / "output" / "eigenvalue_test"
-    directory_plots = directory_to_validation_output / "plots"
+# ============================================================================
+# BASELINE PAIR PROCESSING
+# ============================================================================
 
-    dir_eor_foregrounds_pspec_out = directory_to_validation_output / "eor_foregrounds_sum_pspec"
-    dir_eor_only_pspec_out = directory_to_validation_output / "eor_only_pspec"
+def get_baseline_pair(input_file: Path) -> tuple[str, str, str]:
+    """
+    Extract the baseline pair from the input filename.
 
-    dir_off_delay = dir_eor_foregrounds_pspec_out / "delay_off"
-    dir_on_delay = dir_eor_foregrounds_pspec_out / "delay_on"
+    Returns
+    -------
+    tuple
+        (pair, antenna_1, antenna_2)
+    """
+    pair = input_file.name.split(".")[3]
+    ant1, ant2 = pair.split("_")
 
-    directory_to_validation_datasets.mkdir(parents = True, exist_ok = True)
-    directory_to_validation_output.mkdir(parents = True, exist_ok = True)
-    directory_plots.mkdir(parents = True, exist_ok = True)
-
-    dir_eor_foregrounds_pspec_out.mkdir(parents = True, exist_ok = True)
-    dir_eor_only_pspec_out.mkdir(parents = True, exist_ok = True)
-
-    directory_to_eor_and_foregrounds.mkdir(parents = True, exist_ok = True)
-    directory_to_eor_only_datasets.mkdir(parents = True, exist_ok = True)
-
-    for input_file in directory_to_eor_and_foregrounds.glob("*.uvh5"):
-        #Goes over all validation baseline pairs with boosted eor and foregrounds.
-        pair = input_file.name.split(".")[3]
-        bl_pair_folder_name = "BLPAIR_" + pair
-        ant1, ant2 = pair.split("_")
-
-        if ant1 == ant2:
-            continue  # Skip autocorrelations
-
-        #Make a directory (if it doesn't exist) for the baseline pair under investigation
-        bl_pair_folder_delay_off = dir_off_delay / bl_pair_folder_name
-        bl_pair_folder_delay_on = dir_on_delay / bl_pair_folder_name
-        bl_pair_folder_eor = dir_eor_only_pspec_out / bl_pair_folder_name
-        bl_pair_comparative_plots_folder = directory_plots / bl_pair_folder_name
-
-        bl_pair_folder_delay_off.mkdir(parents = True, exist_ok = True)
-        bl_pair_folder_delay_on.mkdir(parents = True, exist_ok = True)
-        bl_pair_folder_eor.mkdir(parents = True, exist_ok = True)
-        bl_pair_comparative_plots_folder.mkdir(parents = True, exist_ok = True)
-
-        eor_only_input_file = directory_to_eor_only_datasets / input_file.name
-
-        # These files will be output after subprocesses run
-        off_delay_file_pspec = bl_pair_folder_delay_off / f"{input_file.stem}.tavg.pspec.h5"
-        eor_file_pspec = bl_pair_folder_eor / f"{input_file.stem}.tavg.pspec.h5"
+    return pair, ant1, ant2
 
 
-        ev_cutoff_failures = []
+def process_baseline_pair(
+    input_file: Path,
+    directories: dict[str, Path],
+) -> None:
+    """
+    Process one validation dataset / baseline pair.
+    """
+    pair, ant1, ant2 = get_baseline_pair(input_file)
 
-        #Create PSPEC for no delay (foregrounds + eor)
-        if not off_delay_file_pspec.is_file():
-            print(f"Processing file without delay filter : {input_file.name}")
-            try:
-                subprocess.run([
-                    sys.executable,
-                    "single_baseline_postprocessing_and_pspec.py",
-                    str(input_file),
-                    "False",
-                    str(bl_pair_folder_delay_off.absolute()),
-                    str(DLY_FILT_MIN_DLY),
-                    str(IS_INPAINT_HERE),
-                    str(DLY_FILT_EIGENVAL_CUTOFF),
-                    str(False)
-                ], check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Exception in subprocess. Failed with error: {e.returncode}")
-        else:
-            print(f"Skipping existing no-delay pspec: {off_delay_file_pspec.name}")
+    # Skip autocorrelations.
+    if ant1 == ant2:
+        return
 
-        #Create PSPEC for no delay (eor only)
-        if not eor_file_pspec.is_file():
-            print(f"Processing file (eor only) without delay filter : {input_file.name}")
-            try:
-                subprocess.run([
-                    sys.executable,
-                    "single_baseline_postprocessing_and_pspec.py",
-                    str(eor_only_input_file),
-                    "False",
-                    str(bl_pair_folder_eor.absolute()),
-                    str(DLY_FILT_MIN_DLY),
-                    str(IS_INPAINT_HERE),
-                    str(DLY_FILT_EIGENVAL_CUTOFF),
-                    str(False)
-                ], check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Exception in subprocess. Failed with error: {e.returncode}")
-        else:
-            print(f"Skipping existing no-delay (eor only) pspec: {eor_file_pspec.name}")
+    print(f"\n{'=' * 70}")
+    print(f"Processing baseline pair: {pair}")
+    print(f"Input file: {input_file.name}")
+    print(f"{'=' * 70}")
 
-        # Calculate the delay-filtered PSPEC for each eigenvalue cutoff
-        hw = 0
-        for i in range(0, len(EV_CUTOFF_TO_TEST)):
-            ev_cutoff_folder = bl_pair_folder_delay_on / f"ev_cutoff_{EV_CUTOFF_TO_TEST[i]}"
-            ev_cutoff_folder.mkdir(parents = True, exist_ok = True)
+    output_dir = directories["output"]
 
-            on_delay_file_pspec = ev_cutoff_folder / f"{input_file.stem}.tavg.pspec.h5"
-            delay_hw = ev_cutoff_folder / f"{input_file.stem}.tavg.delay_filter_hw.csv"
+    # ------------------------------------------------------------------------
+    # Baseline-specific directories
+    # ------------------------------------------------------------------------
 
-            #Create PSPEC for delay filtering (foregrounds + eor)
-            if not on_delay_file_pspec.is_file():
-                print(f"Processing file with delay filter : {input_file.name}")
-                try:
-                    subprocess.run([
-                        sys.executable,
-                        "single_baseline_postprocessing_and_pspec.py",
-                        str(input_file),
-                        "True",
-                        str(ev_cutoff_folder.absolute()),
-                        str(DLY_FILT_MIN_DLY),
-                        str(IS_INPAINT_HERE),
-                        str(EV_CUTOFF_TO_TEST[i]),
-                        str(False)
-                    ], check=True)
-                except subprocess.CalledProcessError as e:
-                    ev_cutoff_failures.append(EV_CUTOFF_TO_TEST[i])
-                    print(f"Exception in subprocess. Failed with error: {e.returncode}")
-            else:
-                print(f"Skipping existing delay-filtered pspec: {on_delay_file_pspec.name}")
+    baseline_name = f"BLPAIR_{pair}"
+
+    delay_off_dir = (
+        output_dir
+        / "eor_foregrounds_sum_pspec"
+        / "delay_off"
+        / baseline_name
+    )
+
+    delay_on_dir = (
+        output_dir
+        / "eor_foregrounds_sum_pspec"
+        / "delay_on"
+        / baseline_name
+    )
+
+    eor_dir = (
+        output_dir
+        / "eor_only_pspec"
+        / baseline_name
+    )
+
+    plot_dir = (
+        output_dir
+        / "plots"
+        / baseline_name
+    )
+
+    for directory in [
+        delay_off_dir,
+        delay_on_dir,
+        eor_dir,
+        plot_dir,
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------------
+    # Input/output files
+    # ------------------------------------------------------------------------
+
+    eor_only_input_file = (
+        directories["eor_only"] / input_file.name
+    )
+
+    off_delay_file_pspec = (
+        delay_off_dir / f"{input_file.stem}.tavg.pspec.h5"
+    )
+
+    eor_file_pspec = (
+        eor_dir / f"{input_file.stem}.tavg.pspec.h5"
+    )
+
+    # ------------------------------------------------------------------------
+    # Generate unfiltered PSPECs
+    # ------------------------------------------------------------------------
+
+    process_no_delay_pspec(
+        input_file=input_file,
+        output_dir=delay_off_dir,
+        eigenvalue_cutoff=DLY_FILT_EIGENVAL_CUTOFF,
+    )
+
+    process_no_delay_pspec(
+        input_file=eor_only_input_file,
+        output_dir=eor_dir,
+        eigenvalue_cutoff=DLY_FILT_EIGENVAL_CUTOFF,
+    )
+
+    # ------------------------------------------------------------------------
+    # Generate delay-filtered PSPECs
+    # ------------------------------------------------------------------------
+
+    ev_cutoff_failures = []
+    half_width = None
+
+    for cutoff in EV_CUTOFF_TO_TEST:
+        cutoff_dir = delay_on_dir / f"ev_cutoff_{cutoff}"
+        cutoff_dir.mkdir(parents=True, exist_ok=True)
+
+        delay_hw_file = (
+            cutoff_dir
+            / f"{input_file.stem}.tavg.delay_filter_hw.csv"
+        )
+
+        success = process_delay_filtered_pspec(
+            input_file=input_file,
+            output_dir=cutoff_dir,
+            eigenvalue_cutoff=cutoff,
+        )
+
+        if not success:
+            ev_cutoff_failures.append(cutoff)
+            continue
+
+        # Read the filter width once, from the first successful cutoff.
+        if half_width is None:
+            half_width = get_delay_filter_half_width(delay_hw_file)
+
+    # ------------------------------------------------------------------------
+    # Plot results
+    # ------------------------------------------------------------------------
+
+    if half_width is None:
+        print(
+            f"No successful delay-filtered PSPECs for {input_file.name}. "
+            "Skipping plots."
+        )
+        return
+
+    plot_ev_comparative(
+        input_file=input_file,
+        delay_on_dir=delay_on_dir,
+        off_delay_file_pspec=off_delay_file_pspec,
+        eor_file_pspec=eor_file_pspec,
+        output_dir=plot_dir,
+        half_width=half_width,
+        ev_cutoff_failures=ev_cutoff_failures,
+    )
 
 
-            if hw == 0:
-                with open(delay_hw, "r") as file:
-                    line = file.readline()
-                    hw = float(line.split(',')[1]) #Seond argument in csv file of first line is the half width of the delay filter.
-                #hw in nanoseconds btw
+# ============================================================================
+# MAIN PROCESSING
+# ============================================================================
 
-        plot_ev_comparative(input_file, bl_pair_folder_delay_on, off_delay_file_pspec, eor_file_pspec, bl_pair_comparative_plots_folder, hw, ev_cutoff_failures)
+def process_data() -> None:
+    """
+    Process all validation datasets.
+    """
+    directories = get_output_directories()
+    create_output_directories(directories)
 
-def main():
+    eor_foregrounds_dir = directories["eor_foregrounds"]
+
+    input_files = sorted(eor_foregrounds_dir.glob("*.uvh5"))
+
+    print(f"\nFound {len(input_files)} validation dataset(s).")
+
+    for input_file in input_files:
+        process_baseline_pair(
+            input_file=input_file,
+            directories=directories,
+        )
+
+
+def main() -> None:
+    """
+    Entry point.
+    """
+    load_config(TOML_FILE)
     process_data()
+
 
 if __name__ == "__main__":
     main()

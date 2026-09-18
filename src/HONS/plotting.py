@@ -59,7 +59,7 @@ def _get_distinct_colors(n_needed, reserved_colors=None, tol=0.15):
     return pool[:n_needed]
 
 
-# Fixed, reserved colors used by every plot in this module so the
+# Reserved colors used by every plot in this module so the
 # "reference" curves are always visually consistent and never get
 # reassigned to a filtered curve.
 UNFILTERED_COLOR = "black"
@@ -68,6 +68,44 @@ BOUNDARY_COLOR = "dimgray"
 ZERO_LINE_COLOR = "lightgray"
 
 _RESERVED_COLORS = [UNFILTERED_COLOR, EOR_COLOR, BOUNDARY_COLOR, ZERO_LINE_COLOR]
+
+def _fold_onto_abs_tau(delays_ns, delta2):
+    """
+    Fold a signed delay axis onto |tau|.
+
+    Any delay that has both a positive- and negative-delay counterpart
+    (a genuine +/- pair) is averaged. A delay that has no counterpart
+    -- zero delay, or an unpaired Nyquist bin when the axis isn't
+    perfectly symmetric -- is kept as-is instead of being dropped.
+    This replaces position-based pairing + min_len truncation, which
+    silently lost points whenever the negative/positive halves didn't
+    have exactly matching lengths.
+
+    Parameters
+    ----------
+    delays_ns : np.ndarray
+        Signed delay axis, in ns.
+    delta2 : np.ndarray
+        Delta^2(tau) values (or any per-delay quantity) aligned with
+        delays_ns.
+
+    Returns
+    -------
+    tau : np.ndarray
+        Sorted, unique |delay| values.
+    folded : np.ndarray
+        Corresponding folded/averaged values, same length as tau.
+    """
+    abs_tau = np.abs(delays_ns)
+    unique_tau, inverse = np.unique(abs_tau, return_inverse=True)
+
+    folded = np.zeros(unique_tau.shape, dtype=delta2.dtype)
+    counts = np.zeros(unique_tau.shape, dtype=int)
+    np.add.at(folded, inverse, delta2)
+    np.add.at(counts, inverse, 1)
+    folded = folded / counts
+
+    return unique_tau, folded
 
 
 def plot_delta2_tau_multiple(
@@ -79,12 +117,15 @@ def plot_delta2_tau_multiple(
     labels=None,
     unfiltered_label="Unfiltered EOR + FG",
     eor_label="Unfiltered EOR only",
+    log_scale=False,
 ):
     """
     Plot folded/unsigned Delta^2(tau) for multiple delay-filtered
     PSpec files together with the unfiltered signal.
 
-    Negative and positive delays are folded onto |tau| and averaged.
+    Every delay bin is plotted: matched +/- pairs are averaged, and
+    any unmatched bin (zero delay, or a lone Nyquist bin) is kept
+    rather than dropped.
 
     Parameters
     ----------
@@ -100,8 +141,10 @@ def plot_delta2_tau_multiple(
     out_dir : Path
         Directory where plots are saved.
 
-    delay_hw : float
-        Nominal delay-filter half-width in ns.
+    delay_hw : float or list[float]
+        Nominal delay-filter half-width in ns. Either a single value
+        applied to every entry in delay_pspec_files, or a list with
+        one half-width per entry (ordered to match delay_pspec_files).
 
     labels : list[str], optional
         Legend labels for the delay-filtered curves, one per entry in
@@ -112,9 +155,28 @@ def plot_delta2_tau_multiple(
 
     eor_label : str, optional
         Legend label for the unfiltered-EOR-only curve.
+
+    log_scale : bool, optional
+        If True, use log-log axes. Note the tau=0 point (if present)
+        cannot be shown on a log x-axis and matplotlib will simply
+        omit it in that case.
     """
 
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------
+    # Normalize delay_hw into a per-file list
+    # ------------------------------------------------------------
+    delay_hw_is_scalar = np.isscalar(delay_hw)
+    if delay_hw_is_scalar:
+        delay_hws = [delay_hw] * len(delay_pspec_files)
+    else:
+        delay_hws = list(delay_hw)
+        if len(delay_hws) != len(delay_pspec_files):
+            raise ValueError(
+                "delay_hw must be a single float or a list with the same "
+                "length as delay_pspec_files."
+            )
 
     psc_unfiltered = hp.PSpecContainer(unfiltered_pspec_file, mode="r")
     psc_eor = hp.PSpecContainer(eor_pspec_file, mode="r")
@@ -136,14 +198,14 @@ def plot_delta2_tau_multiple(
     if len(labels) != len(delay_pspec_files):
         raise ValueError("Number of labels must match number of delay_pspec_files.")
 
-    # Guaranteed-distinct colors for the filtered curves only. The
-    # unfiltered/eor/boundary colors are fixed constants above and are
-    # excluded from this pool, so nothing can ever collide.
     filtered_colors = _get_distinct_colors(
         len(delay_pspec_files), reserved_colors=_RESERVED_COLORS
     )
 
-    print(f"Nominal delay half-width: {delay_hw} ns")
+    if delay_hw_is_scalar:
+        print(f"Nominal delay half-width: {delay_hw} ns")
+    else:
+        print(f"Nominal delay half-widths: {delay_hws} ns")
 
     for key in uvp_delays[0].get_all_keys():
 
@@ -154,42 +216,21 @@ def plot_delta2_tau_multiple(
         delays = np.squeeze(uvp_delays[0].get_dlys(key[0]))
         delays_ns = delays * 1e9
 
-        neg = delays_ns < 0
-        pos = delays_ns > 0
-
-        tau_neg = np.abs(delays_ns[neg])
-        tau_pos = delays_ns[pos]
-
         # ------------------------------------------------------------
         # Unfiltered
         # ------------------------------------------------------------
 
         P_unfiltered = np.squeeze(uvp_unfiltered.get_data(key).real)
-        delta2_unfiltered_neg = tau_neg**3 * P_unfiltered[neg]
-        delta2_unfiltered_pos = tau_pos**3 * P_unfiltered[pos]
+        delta2_unfiltered_raw = np.abs(delays_ns) ** 3 * P_unfiltered
+        tau, delta2_unfiltered_avg = _fold_onto_abs_tau(delays_ns, delta2_unfiltered_raw)
 
         # ------------------------------------------------------------
         # Unfiltered EOR only
         # ------------------------------------------------------------
 
         P_eor = np.squeeze(uvp_eor.get_data(key).real)
-        delta2_eor_neg = tau_neg**3 * P_eor[neg]
-        delta2_eor_pos = tau_pos**3 * P_eor[pos]
-
-        # A single min_len based on the delay axis itself, used
-        # consistently for every curve on this plot so nothing gets
-        # silently truncated to a different length than its neighbors.
-        min_len = min(len(tau_neg), len(tau_pos))
-
-        tau = tau_pos[:min_len]
-
-        delta2_unfiltered_avg = (
-            delta2_unfiltered_pos[:min_len] + delta2_unfiltered_neg[:min_len]
-        ) / 2.0
-
-        delta2_eor_avg = (
-            delta2_eor_pos[:min_len] + delta2_eor_neg[:min_len]
-        ) / 2.0
+        delta2_eor_raw = np.abs(delays_ns) ** 3 * P_eor
+        _, delta2_eor_avg = _fold_onto_abs_tau(delays_ns, delta2_eor_raw)
 
         # ------------------------------------------------------------
         # Plot
@@ -223,11 +264,8 @@ def plot_delta2_tau_multiple(
         for uvp_delay, label, color in zip(uvp_delays, labels, filtered_colors):
 
             P_filtered = np.squeeze(uvp_delay.get_data(key).real)
-
-            delta2_filtered_neg = (tau_neg**3 * P_filtered[neg])[:min_len]
-            delta2_filtered_pos = (tau_pos**3 * P_filtered[pos])[:min_len]
-
-            delta2_filtered_avg = (delta2_filtered_pos + delta2_filtered_neg) / 2.0
+            delta2_filtered_raw = np.abs(delays_ns) ** 3 * P_filtered
+            _, delta2_filtered_avg = _fold_onto_abs_tau(delays_ns, delta2_filtered_raw)
 
             ax.plot(
                 tau,
@@ -239,24 +277,41 @@ def plot_delta2_tau_multiple(
             )
 
         # ------------------------------------------------------------
-        # Delay-filter boundary
+        # Delay-filter boundary/boundaries
         # ------------------------------------------------------------
 
-        ax.axvline(
-            delay_hw,
-            color=BOUNDARY_COLOR,
-            linestyle="--",
-            linewidth=1.5,
-            label=rf"$\tau_\mathrm{{hw}}={delay_hw:.1f}$ ns",
-            zorder=1,
-        )
+        if delay_hw_is_scalar:
+            # Single shared half-width: one boundary line, as before.
+            ax.axvline(
+                delay_hws[0],
+                color=BOUNDARY_COLOR,
+                linestyle="--",
+                linewidth=1.5,
+                label=rf"$\tau_\mathrm{{hw}}={delay_hws[0]:.1f}$ ns",
+                zorder=1,
+            )
+        else:
+            # One boundary line per filtered curve, colored to match
+            # its curve so it's clear which half-width belongs to
+            # which filter.
+            for hw, color in zip(delay_hws, filtered_colors):
+                ax.axvline(
+                    hw,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1.5,
+                    label=rf"$\tau_\mathrm{{hw}}={hw:.1f}$ ns",
+                    zorder=1,
+                )
 
         # ------------------------------------------------------------
         # Axes
         # ------------------------------------------------------------
 
-        ax.set_xscale("log")
-        ax.set_yscale("log")
+        if log_scale:
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+
         ax.set_xlabel(r"$|\tau|$ [ns]")
         ax.set_ylabel(r"$|\Delta^2(\tau)| \propto |\tau|^3 P(\tau)$")
         ax.set_title(rf"Delay spectrum $\Delta^2(\tau)$ — SPW {key[0]}")
@@ -288,10 +343,15 @@ def plot_delta2_tau_signed_multiple(
     labels=None,
     unfiltered_label="Unfiltered EOR + FG",
     eor_label="Unfiltered EOR only",
+    log_scale=False,
 ):
     """
     Plot Delta^2(tau) against the signed delay axis for multiple
     delay-filtered PSpec files, together with the unfiltered signal.
+
+    The negative- and positive-delay halves each include the tau=0
+    point (rather than strictly excluding it), so every delay bin is
+    drawn and the two halves connect through the origin with no gap.
 
     Parameters
     ----------
@@ -307,8 +367,10 @@ def plot_delta2_tau_signed_multiple(
     out_dir : Path
         Directory where plots are saved.
 
-    delay_hw : float
-        Nominal delay-filter half-width in ns.
+    delay_hw : float or list[float]
+        Nominal delay-filter half-width in ns. Either a single value
+        applied to every entry in delay_pspec_files, or a list with
+        one half-width per entry (ordered to match delay_pspec_files).
 
     labels : list[str], optional
         Legend labels for the delay-filtered curves, one per entry in
@@ -322,6 +384,20 @@ def plot_delta2_tau_signed_multiple(
     """
 
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------
+    # Normalize delay_hw into a per-file list
+    # ------------------------------------------------------------
+    delay_hw_is_scalar = np.isscalar(delay_hw)
+    if delay_hw_is_scalar:
+        delay_hws = [delay_hw] * len(delay_pspec_files)
+    else:
+        delay_hws = list(delay_hw)
+        if len(delay_hws) != len(delay_pspec_files):
+            raise ValueError(
+                "delay_hw must be a single float or a list with the same "
+                "length as delay_pspec_files."
+            )
 
     psc_unfiltered = hp.PSpecContainer(unfiltered_pspec_file, mode="r")
     psc_eor = hp.PSpecContainer(eor_pspec_file, mode="r")
@@ -347,7 +423,10 @@ def plot_delta2_tau_signed_multiple(
         len(delay_pspec_files), reserved_colors=_RESERVED_COLORS
     )
 
-    print(f"Nominal delay half-width: {delay_hw} ns")
+    if delay_hw_is_scalar:
+        print(f"Nominal delay half-width: {delay_hw} ns")
+    else:
+        print(f"Nominal delay half-widths: {delay_hws} ns")
 
     for key in uvp_delays[0].get_all_keys():
 
@@ -365,8 +444,8 @@ def plot_delta2_tau_signed_multiple(
         P_unfiltered = np.squeeze(uvp_unfiltered.get_data(key).real)
         delta2_unfiltered = np.abs(delays_ns) ** 3 * P_unfiltered
 
-        negative_unfiltered = np.isfinite(delta2_unfiltered) & (delays_ns < 0)
-        positive_unfiltered = np.isfinite(delta2_unfiltered) & (delays_ns > 0)
+        negative_unfiltered = np.isfinite(delta2_unfiltered) & (delays_ns <= 0)
+        positive_unfiltered = np.isfinite(delta2_unfiltered) & (delays_ns >= 0)
 
         # ------------------------------------------------------------
         # Unfiltered EOR only signal
@@ -375,12 +454,8 @@ def plot_delta2_tau_signed_multiple(
         P_eor = np.squeeze(uvp_eor.get_data(key).real)
         delta2_eor = np.abs(delays_ns) ** 3 * P_eor
 
-        # BUG FIX: `positive_eor` previously reused `delays_ns < 0`,
-        # so it was identical to `negative_eor` and the entire
-        # positive-delay half of the EOR-only curve was silently
-        # dropped from the plot.
-        negative_eor = np.isfinite(delta2_eor) & (delays_ns < 0)
-        positive_eor = np.isfinite(delta2_eor) & (delays_ns > 0)
+        negative_eor = np.isfinite(delta2_eor) & (delays_ns <= 0)
+        positive_eor = np.isfinite(delta2_eor) & (delays_ns >= 0)
 
         # ------------------------------------------------------------
         # Plot
@@ -434,8 +509,8 @@ def plot_delta2_tau_signed_multiple(
             P_filtered = np.squeeze(uvp_delay.get_data(key).real)
             delta2_filtered = np.abs(delays_ns) ** 3 * P_filtered
 
-            negative_filtered = np.isfinite(delta2_filtered) & (delays_ns < 0)
-            positive_filtered = np.isfinite(delta2_filtered) & (delays_ns > 0)
+            negative_filtered = np.isfinite(delta2_filtered) & (delays_ns <= 0)
+            positive_filtered = np.isfinite(delta2_filtered) & (delays_ns >= 0)
 
             ax.plot(
                 delays_ns[negative_filtered],
@@ -454,24 +529,46 @@ def plot_delta2_tau_signed_multiple(
             )
 
         # ------------------------------------------------------------
-        # Delay-filter boundary
+        # Delay-filter boundary/boundaries
         # ------------------------------------------------------------
 
-        ax.axvline(
-            -delay_hw,
-            color=BOUNDARY_COLOR,
-            linestyle="--",
-            linewidth=1.5,
-            label=rf"$\pm\tau_\mathrm{{hw}}={delay_hw:.1f}$ ns",
-            zorder=1,
-        )
-        ax.axvline(
-            delay_hw,
-            color=BOUNDARY_COLOR,
-            linestyle="--",
-            linewidth=1.5,
-            zorder=1,
-        )
+        if delay_hw_is_scalar:
+            # Single shared half-width: one +/- pair, as before.
+            ax.axvline(
+                -delay_hws[0],
+                color=BOUNDARY_COLOR,
+                linestyle="--",
+                linewidth=1.5,
+                label=rf"$\pm\tau_\mathrm{{hw}}={delay_hws[0]:.1f}$ ns",
+                zorder=1,
+            )
+            ax.axvline(
+                delay_hws[0],
+                color=BOUNDARY_COLOR,
+                linestyle="--",
+                linewidth=1.5,
+                zorder=1,
+            )
+        else:
+            # One +/- pair per filtered curve, colored to match its
+            # curve so it's clear which half-width belongs to which
+            # filter.
+            for hw, color in zip(delay_hws, filtered_colors):
+                ax.axvline(
+                    -hw,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1.5,
+                    label=rf"$\pm\tau_\mathrm{{hw}}={hw:.1f}$ ns",
+                    zorder=1,
+                )
+                ax.axvline(
+                    hw,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1.5,
+                    zorder=1,
+                )
 
         # Zero-delay reference
         ax.axvline(
@@ -489,9 +586,11 @@ def plot_delta2_tau_signed_multiple(
         ax.set_xlabel(r"$\tau$ [ns]")
         ax.set_ylabel(r"$|\Delta^2(\tau)| \propto |\tau|^3 P(\tau)$")
         ax.set_title(f"Signed delay spectrum — SPW {key[0]}")
-        ax.set_yscale("log")
+        if log_scale:
+            ax.set_yscale("log")
+
         ax.grid(True, which="both", alpha=0.25)
-        ax.legend(loc='upper left')
+        ax.legend(loc="upper left")
 
         fig.tight_layout()
 
@@ -507,7 +606,6 @@ def plot_delta2_tau_signed_multiple(
     psc_eor._close()
     for psc in psc_delays:
         psc._close()
-
 
 #-------------------PLOTTING FUNCTIONS-------------------#
 
