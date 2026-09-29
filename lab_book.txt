@@ -2,3 +2,12 @@
 -Setup HERA big data files
 -Setup HERA analysis files, still need to install hera_pspec and hera-calibration packages using uv.
 -Wrote small part of introduction.
+
+2026/09/26
+UPDATE on last few months:
+-Did tests of eigenvalue cutoffs, delay filter widths to determine filter leakage beyond the half-width when filtered.
+-None conclusive, found out that Low_band High_band defined as freqs < 100 MHz and freqs > 100 MHZ which forced bad data into fits.
+-Now:
+    -> Setting up delay_filtering_analysis.ipynb for doing signal loss tests so that baseline averaging uses baselines that satisfy
+        required max signal loss beyond the horizon for any delay bin.
+    -> Writing thesis further (Delay spectra statistics)
