@@ -79,7 +79,6 @@ import importlib
 import toml
 
 #Global tracker vars
-is_delay_analysis = False
 REMOVE_FLAGS: bool
 
 # Settings configurable via env vars (typically set by the bash wrapper).
@@ -118,7 +117,6 @@ if __name__ == "__main__" and len(sys.argv) == 8:
     DLY_FILT_EIGENVAL_CUTOFF = float(sys.argv[6])
     REMOVE_FLAGS = sys.argv[7].lower() == "true"
 
-    is_delay_analysis = True
     print("Override default params.")
 else:
     SINGLE_BL_FILE = os.environ.get('SINGLE_BL_FILE',
@@ -337,24 +335,94 @@ if PLOT: plot_bands()
 
 # %%
 # figure out high and low bands
-FM_ind = np.argmin(np.abs(data.freqs - FM_CUT_FREQ))
-unflagged_chans = np.argwhere(~np.all([np.all(flags[bl], axis=0) for bl in flags], axis=0)).squeeze()
-if np.any(unflagged_chans < FM_ind):
-    low_band = slice(np.min(unflagged_chans), np.max(unflagged_chans[unflagged_chans < FM_ind]) + 1)
-else:
-    low_band = slice(0,0)
-if np.any(unflagged_chans > FM_ind):
-    high_band = slice(np.min(unflagged_chans[unflagged_chans > FM_ind]), np.max(unflagged_chans) + 1)
-else:
-    high_band = slice(0,0)
-    
-print(f'Below FM Frequency Slice: {low_band}')
-print(f'Above FM Frequency Slice: {high_band}')
+# ------------------------------------------------------------
+# Figure out low and high filtering bands from BAND_STR
+# ------------------------------------------------------------
 
-# figure out the range of times that includes all unflagged times (though may still have some flags) for all polarizations
-ORed_flags = np.any([np.all(flags[bl], axis=1) for bl in cross_bls], axis=0)
-tslice = slice(true_stretches(~ORed_flags)[0].start, true_stretches(~ORed_flags)[-1].stop)
-print(f'Time Slice Excluded Edge Flags: {tslice}')
+df, bands, min_freqs, max_freqs, band_slices, nchans = parse_band_str(
+    BAND_STR,
+    data.freqs
+)
+
+# The spectral windows are ordered from low to high frequency.
+# Use the end of SPW3 as the upper bound of the low band,
+# and the start of SPW4 as the lower bound of the high band.
+low_band_end = band_slices[2].stop
+high_band_start = band_slices[3].start
+
+# The high band should end at the end of the final spectral window.
+high_band_end = band_slices[-1].stop
+
+# Find channels that are not completely flagged across all baselines.
+unflagged_chans = np.argwhere(
+    ~np.all(
+        [np.all(flags[bl], axis=0) for bl in flags],
+        axis=0
+    )
+).squeeze()
+
+# ------------------------------------------------------------
+# Low band
+# ------------------------------------------------------------
+
+low_chans = unflagged_chans[
+    unflagged_chans < low_band_end
+]
+
+if low_chans.size > 0:
+    # Always start at the beginning of SPW0
+    low_band = slice(
+        band_slices[0].start,
+        low_band_end
+    )
+else:
+    low_band = slice(0, 0)
+
+# ------------------------------------------------------------
+# High band
+# ------------------------------------------------------------
+
+high_chans = unflagged_chans[
+    unflagged_chans >= high_band_start
+]
+
+if high_chans.size > 0:
+    high_band = slice(
+        high_band_start,
+        high_band_end
+    )
+else:
+    high_band = slice(0, 0)
+
+print(
+    f"Low band: "
+    f"{data.freqs[low_band.start]/1e6:.2f}–"
+    f"{data.freqs[low_band.stop-1]/1e6:.2f} MHz"
+)
+
+print(
+    f"High band: "
+    f"{data.freqs[high_band.start]/1e6:.2f}–"
+    f"{data.freqs[high_band.stop-1]/1e6:.2f} MHz"
+)
+
+print(f"Low band slice:  {low_band}")
+print(f"High band slice: {high_band}")
+
+# Figure out the range of times that includes all unflagged times
+# (though it may still contain some flagged times) for all polarizations.
+
+ORed_flags = np.any(
+    [np.all(flags[bl], axis=1) for bl in cross_bls],
+    axis=0
+)
+
+tslice = slice(
+    true_stretches(~ORed_flags)[0].start,
+    true_stretches(~ORed_flags)[-1].stop
+)
+
+print(f"Time Slice Excluded Edge Flags: {tslice}")
 
 # %%
 # FOR DIAGNOSTICS/DEBUGGING ONLY: unflag everything and set nsamples to the median

@@ -18,26 +18,17 @@ EV_CUTOFF_TO_TEST = [
     1e-6,
     1e-4,
     1e-2,
-    0.05,
-    0.1,
-    0.2,
-    0.3,
-    0.5,
-    0.7,
-    0.8,
-    0.9,
-    0.95,
-    0.99,
-    0.999,
+    1e-1
 ]
 
 EV_CUTOFF_TO_PLOT = [
     1e-12,
     1e-10,
-    1e-6,
+    1e-8,
+    1e-6
 ]
 
-IS_LOG_SCALE = False
+IS_LOG_SCALE = True
 IS_INPAINT_HERE = False
 IS_REMOVE_FLAGS = False
 
@@ -276,22 +267,24 @@ def plot_ev_comparative(
 
     plotting.plot_delta2_tau_multiple(
         off_delay_file_pspec,
-        eor_file_pspec,
         delay_pspec_files,
-        output_dir,
         half_width,
-        labels,
-        log_scale=IS_LOG_SCALE,
+        out_dir = output_dir,
+        labels = labels,
+        eor_pspec_file = eor_file_pspec,
+        log_scale = IS_LOG_SCALE,
+        scale_y_axis_detailed = not IS_LOG_SCALE
     )
 
     plotting.plot_delta2_tau_signed_multiple(
         off_delay_file_pspec,
-        eor_file_pspec,
         delay_pspec_files,
-        output_dir,
         half_width,
-        labels,
-        log_scale=IS_LOG_SCALE,
+        out_dir = output_dir,
+        labels = labels,
+        eor_pspec_file = eor_file_pspec,
+        log_scale = IS_LOG_SCALE,
+        scale_y_axis_detailed = not IS_LOG_SCALE
     )
 
 
@@ -360,11 +353,17 @@ def process_baseline_pair(
         / baseline_name
     )
 
-    plot_dir = (
-        output_dir
-        / "plots"
-        / baseline_name
-    )
+    plot_dir_bl = output_dir / "plots" / baseline_name
+    plot_dir_bl.mkdir(parents=True, exist_ok=True)
+
+    plot_dir = ""
+    if IS_LOG_SCALE:
+        plot_dir = plot_dir_bl / "LOG"
+    else:
+        plot_dir = plot_dir_bl / "NON-LOG"
+
+    for directory in [delay_off_dir, delay_on_dir, eor_dir, plot_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
 
     for directory in [
         delay_off_dir,
