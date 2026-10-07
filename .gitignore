@@ -222,3 +222,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local backup of nested repository (not part of HERA_HONS)
+hera_notebook_templates.git-backup/
+
+# Large local data files — required locally, not stored in GitHub
+src/HONS/NF_HERA_Vivaldi_efield_beam_healpix.fits
+src/spectra_cache_hera_core.h5
