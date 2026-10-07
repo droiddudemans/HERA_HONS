@@ -1,0 +1,13 @@
+# Distribution and Packaging
+*.pyc
+*.DS_Store
+build/
+dist/
+*.coverage
+*.egg-info/
+hera_notebook_templates/GIT_INFO
+*-checkpoint.ipynb
+hera_notebook_templates/_version.py
+.qodo
+NF_HERA_Vivaldi*.fits
+/.claude

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hera_notebook_templates"
+description = "Repository for HERA analysis / real-time pipeline notebooks and related support code"
+authors = [
+    {name="HERA Team"},
+]
+readme = "README.rst"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "pandas",
+    "scipy",
+    "astropy",
+    "pyuvdata",
+    "uvtools",
+    "hera-qm>=2.1.1",
+    "hera-calibration>=3.2.2",
+    "bokeh",
+    "hera-mc",
+    "jupyter",
+    "memory-profiler",
+    "papermill",
+    "toml",
+]
+dynamic = [
+    "version",
+]
+
+
+[tool.setuptools_scm]
+write_to = "hera_notebook_templates/_version.py"
+parentdir_prefix_version = "hera_notebook_templates-"
+fallback_version = "0.0.0"
+
+[tool.setuptools]
+packages = ["hera_notebook_templates"]
+
+[project.scripts]
+hnote = "hera_notebook_templates.cli:main"

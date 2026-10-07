@@ -47,7 +47,7 @@ healpy==1.19.0
 hera-calibration==3.7.7
 hera-filters==0.1.7
 hera-mc==3.0.0
--e file:///home/kwuzard/Documents/hera_notebook_templates
+-e ./hera_notebook_templates
 hera-pspec==0.5.0
 hera-qm==2.2.0
 httpcore==1.0.9
