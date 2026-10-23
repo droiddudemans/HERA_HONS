@@ -1,4 +1,5 @@
 import numpy as np
+from IPython.display import display
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from pathlib import Path
@@ -976,3 +977,59 @@ def plot_signal_amplification_vs_spw(
         fig.savefig(out_path, dpi=150)
 
     return out_path
+
+
+
+def plot_optimal_cutoff_vs_hw_fraction(table_rows):
+    """Display one inline plot per baseline with feasible optimal cutoffs."""
+
+    if not table_rows:
+        print("No rows supplied to plotting function.")
+        return
+
+    baselines = sorted({row["bl_name"] for row in table_rows})
+    print(f"Plotting results for {len(baselines)} baselines.")
+
+    for bl_name in baselines:
+        baseline_rows = [
+            row for row in table_rows
+            if row["bl_name"] == bl_name
+            and row["opt_ev_cutoff"] not in ("", None)
+        ]
+
+        if not baseline_rows:
+            print(f"No feasible cutoff results for {bl_name}.")
+            continue
+
+        baseline_rows.sort(key=lambda row: float(row["hw_fract"]))
+
+        hw_fracts = [float(row["hw_fract"]) for row in baseline_rows]
+        ev_cutoffs = [float(row["opt_ev_cutoff"]) for row in baseline_rows]
+
+        # Log scale cannot display zero or negative cutoffs.
+        valid = [
+            (hw, ev) for hw, ev in zip(hw_fracts, ev_cutoffs)
+            if ev > 0
+        ]
+
+        if not valid:
+            print(f"{bl_name}: no positive cutoffs for log-scale plot.")
+            continue
+
+        hw_fracts, ev_cutoffs = map(list, zip(*valid))
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(hw_fracts, ev_cutoffs, marker="o", linestyle="-")
+
+        ax.set_xlabel("HW fraction")
+        ax.set_ylabel("Optimal eigenvalue cutoff")
+        ax.set_title(f"{bl_name}: Optimal cutoff vs HW fraction")
+        ax.set_yscale("log")
+        ax.set_xticks(sorted(set(hw_fracts)))
+        ax.grid(True, which="both", alpha=0.3)
+
+        fig.tight_layout()
+        display(fig)
+        plt.close(fig)
+
+        print(f"{bl_name}: plotted {len(hw_fracts)} feasible cutoffs.")
