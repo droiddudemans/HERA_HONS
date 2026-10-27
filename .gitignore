@@ -7,10 +7,11 @@ __pycache__/
 *.so
 
 # My data
-raw_data/
+data/
 output/
 validation_data/
 screenshots/
+src/crashes/
 
 # Distribution / packaging
 .Python
