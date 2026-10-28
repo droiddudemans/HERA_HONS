@@ -11,3 +11,11 @@ UPDATE on last few months:
     -> Setting up delay_filtering_analysis.ipynb for doing signal loss tests so that baseline averaging uses baselines that satisfy
         required max signal loss beyond the horizon for any delay bin.
     -> Writing thesis further (Delay spectra statistics)
+
+2026/10/28
+UPDATE:
+-Added fitting delay filter configurations vs. baseline length on small subset of data.
+-Use fits to predict configs for full 800 baseline dataset
+-Merge pspecs (filtered / unfiltered)
+-summary notebook used on merged pspecs
+-Calculate final signal loss
