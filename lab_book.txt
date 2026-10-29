@@ -19,3 +19,8 @@ UPDATE:
 -Merge pspecs (filtered / unfiltered) (Github: github.com/HERA-Team/hera_pipelines/blob/main/pipelines/validation/h6c/post-lstbin/task_scripts/do_MERGE_SINGLE_BASELINE_FILES.sh)
 -summary notebook used on merged pspecs
 -Calculate final signal loss
+
+2026/10/29
+-Added bulk single baseline postprocessing and pspec sh file : run_all.sh
+    ->Added merge baselines sh file that is executed from the above sh file to merge the many pspecs for filtered and unfiltered : do_MERGE_SINGLE_BASELINE_FILES.sh
+    ->Feeds merged baselines (unfiltered/filtered) into summary notebook
