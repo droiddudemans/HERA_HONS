@@ -86,10 +86,14 @@ PIXEL_FLAG_CUT = 0.0
 CHANNEL_FLAG_CUT = 0.0
 
 # Delay filter configuration fit options
+FIT_REQUIRES_MAX_SIGNAL_LOSS_BEYOND_HORIZON = 0.03
 FIT_RESULTS_OUT = "/home/Kwuzard/Projects/HERA_HONS/output/signal_loss_test_out"
 FIT_DATA = "/home/Kwuzard/Projects/HERA_HONS/data"
 FIT_ON_EOR_ONLY = true
 FIT_ON_EXPERIMENTAL = false
+
+#Applying filter config fits to batch processing options
+SINGLE_BL_PSPEC_NOTEBOOK_PATH = "/home/Kwuzard/Projects/HERA_HONS/src/HONS/single_baseline_postprocessing_and_pspec.ipynb"
 
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
