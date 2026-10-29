@@ -85,6 +85,12 @@ FM_GAP_HIGH = 117.3e6
 PIXEL_FLAG_CUT = 0.0
 CHANNEL_FLAG_CUT = 0.0
 
+# Delay filter configuration fit options
+FIT_RESULTS_OUT = "/home/Kwuzard/Projects/HERA_HONS/output/signal_loss_test_out"
+FIT_DATA = "/home/Kwuzard/Projects/HERA_HONS/data"
+FIT_ON_EOR_ONLY = true
+FIT_ON_EXPERIMENTAL = false
+
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
 NINTERLEAVE = 4
