@@ -6,10 +6,10 @@ Repository dedicated to the HERA 21 cm analysis pipeline configuration project i
 The following large data files are required to run the project but are not
 stored in the Git repository because of their size:
 
-- `src/HONS/NF_HERA_Vivaldi_efield_beam_healpix.fits`
+- `NF_HERA_Vivaldi_efield_beam_healpix.fits`
   - HERA Vivaldi E-field beam model.
-- `src/spectra_cache_hera_core.h5`
+- `spectra_cache_hera_core.h5`
   - HERA spectra cache required by the analysis pipeline.
 
-These files must be obtained separately and placed at the paths above before
+These files must be obtained separately and placed in whatever directory and their paths set in the TOML file before
 running the analysis.
