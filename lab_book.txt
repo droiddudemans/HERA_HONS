@@ -16,6 +16,6 @@ UPDATE on last few months:
 UPDATE:
 -Added fitting delay filter configurations vs. baseline length on small subset of data.
 -Use fits to predict configs for full 800 baseline dataset
--Merge pspecs (filtered / unfiltered)
+-Merge pspecs (filtered / unfiltered) (Github: github.com/HERA-Team/hera_pipelines/blob/main/pipelines/validation/h6c/post-lstbin/task_scripts/do_MERGE_SINGLE_BASELINE_FILES.sh)
 -summary notebook used on merged pspecs
 -Calculate final signal loss
