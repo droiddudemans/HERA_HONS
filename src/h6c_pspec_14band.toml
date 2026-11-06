@@ -1,16 +1,17 @@
 [Options]
 makeflow_type = "analysis"
 source_script = "~/.bashrc"
-base_mem = 23500
+base_mem = 15500
 base_cpu = 1
 timeout = "24h"
-path_to_do_scripts = "/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_pipelines/pipelines/h6c/idr3/v2/post-lstbin/task_scripts"
-conda_env = "h6c_idr3"
+path_to_do_scripts = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/HONS/task_scripts"
+conda_env = "h6c_idr2_validation"
 batch_system = "slurm"
 
 [NOTEBOOK_OPTS]
-toml_file = "/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_pipelines/pipelines/h6c/idr3/v2/post-lstbin/h6c_pspec_11band.toml"  # this file
-nb_output_repo = '/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/notebooks'
+toml_file = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/HONS/h6c_pspec_14band.toml"  # this file
+toml_section = "CONFIG_OPTS"
+kernel = ""
 
 [NOTEBOOK_TEMPLATE_OPTS]
 nb_template_dir = '/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_notebook_templates/notebooks'
@@ -21,7 +22,7 @@ FM_high_freq = 108.0  # in MHz
 eigenval_cutoff = 1e-12
 auto_fr_spectrum_file = '/lustre/aoc/projects/hera/zmartino/hera_frf/spectra_cache/spectra_cache_hera_auto.h5'
 min_samp_frac = 0.05  # TODO: this should probably be 0.1, but let's try this for now
-BAND_STR = "49.0~62.2,62.9~74.1,74.4~86.9,110.3~124.6,125.3~136.2,138.8~149.9,150.0~164.0,164.1~180.9,181.6~197.1,197.3~213.2,213.2~227.3"
+BAND_STR = "50.2~62.2,63.3~73.5,74.6~85.4,117.3~124.4,125.4~136.2,159.3~169.9,171.9~181.1,212.3~220.6"
 LST_MIN = -1.5  # i.e. 22.5 hours
 LST_MAX = 15.5
 
@@ -59,116 +60,102 @@ apply_abscal_correction = true  # if true, multiply cross visibilities by upsamp
 abscal_smooth_delay = 33.333  # ns; delay half-width for the 2D DPSS smoothing of the abscal ratio
 abscal_smooth_fringe_rate = 0.0001  # Hz; fringe-rate half-width for the 2D DPSS smoothing of the abscal ratio
 
-[POSTPROCESS_AND_PSPEC_OPTS] # This section is directly read when running the notebook.
+[POSTPROCESS_AND_PSPEC_OPTS]
 # General Options
-PLOT = false
+PLOT = true
 SAVE_RESULTS = true
 
-# Spectral Options
 ALREADY_INPAINTED = true
 PERFORM_INPAINT = false
-INPAINT_MIN_DLY = 500.0  # ns
+INPAINT_MIN_DLY = 500.0
 INPAINT_HORIZON = 1.0
 INPAINT_STANDOFF = 0.0
 INPAINT_EIGENVAL_CUTOFF = 1e-12
 
 PERFORM_DLY_FILT = false
-DLY_FILT_MIN_DLY = 150  # ns
+DLY_FILT_MIN_DLY = 150.0
 DLY_FILT_HORIZON = 1.0
 DLY_FILT_STANDOFF = 0.0
 DLY_FILT_EIGENVAL_CUTOFF = 1e-12
 
 USE_BAND_AVG_NSAMPLES = true
-FM_CUT_FREQ = 100000000.0  # Hz
+FM_CUT_FREQ = 100000000.0
 PIXEL_FLAG_CUT = 0.0
 CHANNEL_FLAG_CUT = 0.0
+
+# Delay filter configuration fit options
+FIT_REQUIRES_MAX_SIGNAL_LOSS_BEYOND_HORIZON = 0.03
+FIT_RESULTS_OUT = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/delay_filtering_fit_results"
+FIT_DATA = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/data"
+FIT_ON_EXPERIMENTAL = false
+#Setting below to false means full validation data (including fg and systematics)
+FIT_ON_EOR_ONLY = true
+
+# Where the single-baseline pspecs and the merged pspecs go:
+#   <PSPEC_OUT_DIR>/{filtered,unfiltered}/BLPAIR_*/   one directory per baseline (800 of each)
+#   <PSPEC_OUT_DIR>/merged/{filtered,unfiltered}/     one merged file each
+PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out"
+N_EXPECTED_BASELINES = 0  # the merge step refuses to run if it finds a different number of files; 0 disables
 
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
 NINTERLEAVE = 4
-XTALK_FR = 0.01  # mHz
-FR_SPECTRA_FILE = "/home/Kwuzard/Projects/HERA_HONS/src/spectra_cache_hera_core.h5"
+XTALK_FR = 0.01
+FR_SPECTRA_FILE = "/lustre/aoc/projects/hera/zmartino/hera_frf/spectra_cache/spectra_cache_hera_core.h5"
 FR_QUANTILE_LOW = 0.05
 FR_QUANTILE_HIGH = 0.95
 FR_EIGENVAL_CUTOFF = 1e-12
-TARGET_AVERAGING_TIME = 300  # seconds
+TARGET_AVERAGING_TIME = 300
+
+LST_MIN = 1.25
+LST_MAX = 5.75
 
 # pspec options
-EFIELD_HEALPIX_BEAM_FILE = "/home/Kwuzard/Projects/HERA_HONS/src/HONS/NF_HERA_Vivaldi_efield_beam_healpix.fits"
+EFIELD_HEALPIX_BEAM_FILE = "/lustre/aoc/projects/hera/H4C/beams/NF_HERA_Vivaldi_efield_beam_healpix.fits"
 TAPER = "bh"
 INCLUDE_INTERLEAVE_AUTO_PS = false
 STORE_WINDOW_FUNCTIONS = false
-PSPEC_LST_AVG_RANGES = "1.0~10.0" # carves out PSR J0628-28 and PSR J0742-2822
 
 [WorkFlow]
 actions = [
-    "SINGLE_LSTSTACK_BASELINE_FILTERED_SNR",
-    "LSTSTACK_RFI_ROUND_6_NOTEBOOK",
-    "SINGLE_LSTSTACK_BASELINE_REINPAINT",
+    "DELAY_FILTERING_ANALYSIS_AND_FITTING",
     "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
     "MERGE_SINGLE_BASELINE_FILES",
 ]
 
-[SINGLE_LSTSTACK_BASELINE_FILTERED_SNR]
+[DELAY_FILTERING_ANALYSIS_AND_FITTING]
+# Runs once for the whole dataset (chunk_size = "all"). Writes fit_result.json under FIT_RESULTS_OUT.
 args = [
-    "{basename}",
     "${NOTEBOOK_OPTS:toml_file}",
+    "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
-    "${NOTEBOOK_OPTS:nb_output_repo}",
 ]
-
-[LSTSTACK_RFI_ROUND_6_NOTEBOOK]
-mem = 128000
-prereqs = "SINGLE_LSTSTACK_BASELINE_FILTERED_SNR"
-prereq_chunk_size = "all"
-chunk_size = 1
-stride_length = "all"
-time_centered = false
-args = [
-    "{basename}",
-    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
-    "${NOTEBOOK_OPTS:nb_output_repo}",
-    "${GLOBAL_OPTS:min_samp_frac}",
-    "${GLOBAL_OPTS:FM_low_freq}",
-    "${GLOBAL_OPTS:FM_high_freq}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:z_thresh}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:ws_z_thresh}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:avg_z_thresh}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:max_freq_flag_frac}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:max_time_flag_frac}",
-    "${LSTSTACK_RFI_ROUND_6_OPTS:time_conv_size}",
-]
-
-[SINGLE_LSTSTACK_BASELINE_REINPAINT]
-prereqs = "LSTSTACK_RFI_ROUND_6_NOTEBOOK"
-prereq_chunk_size = "all"
-args = [
-    "{basename}",
-    "${NOTEBOOK_OPTS:toml_file}",
-    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
-    "${NOTEBOOK_OPTS:nb_output_repo}",
-]
+chunk_size = "all"
+mem = 32000
 
 [SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC]
-prereqs = "SINGLE_LSTSTACK_BASELINE_REINPAINT"
+# One job per baseline file. Each job writes one unfiltered and one filtered pspec, and cannot start until the fit exists.
+prereqs = [
+    "DELAY_FILTERING_ANALYSIS_AND_FITTING",
+]
 prereq_chunk_size = "all"
 args = [
     "{basename}",
     "${NOTEBOOK_OPTS:toml_file}",
+    "${NOTEBOOK_OPTS:toml_section}",
+    "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
-    "${NOTEBOOK_OPTS:nb_output_repo}",
 ]
 
 [MERGE_SINGLE_BASELINE_FILES]
+# Merges all filtered pspecs into one file and all unfiltered pspecs into one file.
 prereqs = [
     "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
 ]
+chunk_size = "all"
 prereq_chunk_size = "all"
-chunk_size = 1
-stride_length = "all"
-time_centered = false
 args = [
-    "{basename}",
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${Options:conda_env}",
 ]
-mem=250000
-ncpu = 16
+mem = 100000

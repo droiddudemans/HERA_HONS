@@ -1,4 +1,11 @@
 2026/10/30:
--> Setup signal loss tests and statistical output into a final notebook that uses the results from the summary notebooks.
--> Use AI to scan for bugs that can cause crashes in the new files
--> Start moving stuff to NRAO.
+1-> Setup signal loss tests and statistical output into a final notebook that uses the results from the summary notebooks.
+2-> Use AI to scan for bugs that can cause crashes in the new files
+3-> Start moving stuff to NRAO.
+
+Done: 1, 2 (partially)
+Not done: 3
+
+2026/10/31:
+1-> Bug checks for full pipeline
+2-> Move stuff to NRAO
