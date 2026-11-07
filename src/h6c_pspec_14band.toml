@@ -95,7 +95,13 @@ FIT_ON_EOR_ONLY = true
 #   <PSPEC_OUT_DIR>/{filtered,unfiltered}/BLPAIR_*/   one directory per baseline (800 of each)
 #   <PSPEC_OUT_DIR>/merged/{filtered,unfiltered}/     one merged file each
 PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out"
-N_EXPECTED_BASELINES = 0  # the merge step refuses to run if it finds a different number of files; 0 disables
+SUMMARY_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out/summary"  # power_spectrum_summary.ipynb outputs: filtered/ and unfiltered/ subfolders
+SIGNAL_LOSS_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out/signal_loss"
+# Shared by POWER_SPECTRUM_SUMMARY and SIGNAL_LOSS_ANALYSIS. Bands are 1-indexed into BAND_STR above (currently 8 bands, so at most 1..8).
+SUMMARY_BANDS = "1,2,3,4,5,6,7,8"
+SUMMARY_WEDGE_BUFFER_NS = 500.0
+SUMMARY_WINDOW_FUNCTION_FILEGLOB = "/lustre/aoc/projects/hera/kfchen/H6C/inpainting/window_function/exact_window-spw??-wf.npy"
+N_EXPECTED_BASELINES = 800  # the merge step refuses to run if it finds a different number of files; 0 disables
 
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
@@ -121,6 +127,8 @@ actions = [
     "DELAY_FILTERING_ANALYSIS_AND_FITTING",
     "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
     "MERGE_SINGLE_BASELINE_FILES",
+    "POWER_SPECTRUM_SUMMARY",
+    "SIGNAL_LOSS_ANALYSIS",
 ]
 
 [DELAY_FILTERING_ANALYSIS_AND_FITTING]
@@ -159,3 +167,31 @@ args = [
     "${Options:conda_env}",
 ]
 mem = 100000
+
+[POWER_SPECTRUM_SUMMARY]
+# Runs power_spectrum_summary.ipynb on the merged unfiltered pspec, then on the merged filtered one.
+# Writes <SUMMARY_DIR>/{unfiltered,filtered}/{unfiltered,filtered}.deltasq.{1d,2d}.spwNN.npz plus figures.
+prereqs = [
+    "MERGE_SINGLE_BASELINE_FILES",
+]
+chunk_size = "all"
+prereq_chunk_size = "all"
+args = [
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${Options:conda_env}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+]
+mem = 64000
+
+[SIGNAL_LOSS_ANALYSIS]
+# Runs once after the summaries: compares the filtered and unfiltered results (signal_loss_analysis.ipynb).
+prereqs = [
+    "POWER_SPECTRUM_SUMMARY",
+]
+chunk_size = "all"
+prereq_chunk_size = "all"
+args = [
+    "${NOTEBOOK_OPTS:toml_file}",
+    "${Options:conda_env}",
+    "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+]
