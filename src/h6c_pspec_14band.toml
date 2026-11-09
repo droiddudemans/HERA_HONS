@@ -10,11 +10,13 @@ batch_system = "slurm"
 
 [NOTEBOOK_OPTS]
 toml_file = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/HONS/h6c_pspec_14band.toml"  # this file
-toml_section = "CONFIG_OPTS"
 kernel = ""
 
 [NOTEBOOK_TEMPLATE_OPTS]
-nb_template_dir = '/lustre/aoc/projects/hera/h6c-analysis/IDR3_2/src/hera_notebook_templates/notebooks'
+# Directory holding OUR copies of the notebooks used by this makeflow:
+#   delay_filtering_analysis_and_fitting, single_baseline_postprocessing_and_pspec,
+#   power_spectrum_summary, signal_loss_analysis (all .ipynb)
+nb_template_dir = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/HONS/notebooks"
 
 [GLOBAL_OPTS]
 FM_low_freq = 87.5  # in MHz
@@ -72,10 +74,12 @@ INPAINT_HORIZON = 1.0
 INPAINT_STANDOFF = 0.0
 INPAINT_EIGENVAL_CUTOFF = 1e-12
 
-PERFORM_DLY_FILT = false
+# PERFORM_DLY_FILT is deliberately not set here: every baseline is processed twice, and the task script sets it per run
+# (unfiltered: False; filtered: True, with the half-width / eigenvalue cutoff predicted from the fit).
 DLY_FILT_MIN_DLY = 150.0
 DLY_FILT_HORIZON = 1.0
 DLY_FILT_STANDOFF = 0.0
+# Only used when running the notebook by hand: the filtered makeflow run replaces this with the value predicted from the fit.
 DLY_FILT_EIGENVAL_CUTOFF = 1e-12
 
 USE_BAND_AVG_NSAMPLES = true
@@ -83,25 +87,10 @@ FM_CUT_FREQ = 100000000.0
 PIXEL_FLAG_CUT = 0.0
 CHANNEL_FLAG_CUT = 0.0
 
-# Delay filter configuration fit options
-FIT_REQUIRES_MAX_SIGNAL_LOSS_BEYOND_HORIZON = 0.03
-FIT_RESULTS_OUT = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/delay_filtering_fit_results"
-FIT_DATA = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/data"
-FIT_ON_EXPERIMENTAL = false
-#Setting below to false means full validation data (including fg and systematics)
-FIT_ON_EOR_ONLY = true
-
 # Where the single-baseline pspecs and the merged pspecs go:
-#   <PSPEC_OUT_DIR>/{filtered,unfiltered}/BLPAIR_*/   one directory per baseline (800 of each)
+#   <PSPEC_OUT_DIR>/{filtered,unfiltered}/BLPAIR_*/   one directory per baseline file
 #   <PSPEC_OUT_DIR>/merged/{filtered,unfiltered}/     one merged file each
-PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out"
-SUMMARY_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out/summary"  # power_spectrum_summary.ipynb outputs: filtered/ and unfiltered/ subfolders
-SIGNAL_LOSS_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out/signal_loss"
-# Shared by POWER_SPECTRUM_SUMMARY and SIGNAL_LOSS_ANALYSIS. Bands are 1-indexed into BAND_STR above (currently 8 bands, so at most 1..8).
-SUMMARY_BANDS = "1,2,3,4,5,6,7,8"
-SUMMARY_WEDGE_BUFFER_NS = 500.0
-SUMMARY_WINDOW_FUNCTION_FILEGLOB = "/lustre/aoc/projects/hera/kfchen/H6C/inpainting/window_function/exact_window-spw??-wf.npy"
-N_EXPECTED_BASELINES = 800  # the merge step refuses to run if it finds a different number of files; 0 disables
+PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/output/pspec_out"
 
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
@@ -122,6 +111,29 @@ TAPER = "bh"
 INCLUDE_INTERLEAVE_AUTO_PS = false
 STORE_WINDOW_FUNCTIONS = false
 
+[DELAY_FILTERING_FITTING_OPTIONS]  # Read by delay_filtering_analysis_and_fitting (writes the fit) and single_baseline_postprocessing_and_pspec (reads it)
+FIT_REQUIRES_MAX_SIGNAL_LOSS_BEYOND_HORIZON = 0.03
+FIT_RESULTS_OUT = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/delay_filtering_fit_results"
+FIT_DATA = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/data"
+FIT_ON_EXPERIMENTAL = false
+# Setting below to false means full validation data (including fg and systematics)
+FIT_ON_EOR_ONLY = true
+
+[POWER_SPECTRUM_SUMMARY_OPTS]  # Read by power_spectrum_summary and signal_loss_analysis (which must use the same bands and wedge buffer)
+SUMMARY_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/output/pspec_out/summary"  # gets unfiltered/ and filtered/ subfolders
+BANDS_TO_USE = "1,2,3,4,5,6,7,8"  # 1-indexed into BAND_STR (GLOBAL_OPTS), which currently defines 8 bands
+WEDGE_BUFFER_NS = 500.0
+MAX_FRF_SIGNAL_LOSS = 0.1
+WINDOW_FUNCTION_FILEGLOB = "/lustre/aoc/projects/hera/kfchen/H6C/inpainting/window_function/exact_window-spw??-wf.npy"
+KBINS_DK_MULTIPLIER = 4.0         # How wide the |k|-bins are, multiplied by natural delay resolution
+KBINS_KSTART_MULTIPLIER = 0.625   # The first |k| bin center is at KBINS_DK_MULTIPLIER*dk*KBINS_KSTART_MULTIPLIER
+KBINS_MAXK_HMPC = 2.5             # The maximum k to include in the spherical averages
+
+[SIGNAL_LOSS_OPTS]  # Read by signal_loss_analysis
+SIGNAL_LOSS_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/output/pspec_out/signal_loss"
+MIN_SNR = 0.0       # include a pixel/bin only if |Delta^2_unfilt| > MIN_SNR * 1sigma
+MAX_ERR = 1e20      # error bars above this count as unconstrained
+
 [WorkFlow]
 actions = [
     "DELAY_FILTERING_ANALYSIS_AND_FITTING",
@@ -133,16 +145,19 @@ actions = [
 
 [DELAY_FILTERING_ANALYSIS_AND_FITTING]
 # Runs once for the whole dataset (chunk_size = "all"). Writes fit_result.json under FIT_RESULTS_OUT.
+# args: toml_file, conda_env, nb_template_dir, fit_results_out
 args = [
     "${NOTEBOOK_OPTS:toml_file}",
     "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${DELAY_FILTERING_FITTING_OPTIONS:FIT_RESULTS_OUT}",
 ]
 chunk_size = "all"
 mem = 32000
 
 [SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC]
 # One job per baseline file. Each job writes one unfiltered and one filtered pspec, and cannot start until the fit exists.
+# args: input file, toml_file, conda_env, nb_template_dir, pspec_out_dir
 prereqs = [
     "DELAY_FILTERING_ANALYSIS_AND_FITTING",
 ]
@@ -150,27 +165,28 @@ prereq_chunk_size = "all"
 args = [
     "{basename}",
     "${NOTEBOOK_OPTS:toml_file}",
-    "${NOTEBOOK_OPTS:toml_section}",
     "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${POSTPROCESS_AND_PSPEC_OPTS:PSPEC_OUT_DIR}",
 ]
 
 [MERGE_SINGLE_BASELINE_FILES]
 # Merges all filtered pspecs into one file and all unfiltered pspecs into one file.
+# args: pspec_out_dir, conda_env
 prereqs = [
     "SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC",
 ]
 chunk_size = "all"
 prereq_chunk_size = "all"
 args = [
-    "${NOTEBOOK_OPTS:toml_file}",
+    "${POSTPROCESS_AND_PSPEC_OPTS:PSPEC_OUT_DIR}",
     "${Options:conda_env}",
 ]
 mem = 100000
 
 [POWER_SPECTRUM_SUMMARY]
 # Runs power_spectrum_summary.ipynb on the merged unfiltered pspec, then on the merged filtered one.
-# Writes <SUMMARY_DIR>/{unfiltered,filtered}/{unfiltered,filtered}.deltasq.{1d,2d}.spwNN.npz plus figures.
+# args: toml_file, conda_env, nb_template_dir, pspec_out_dir, summary_out_dir
 prereqs = [
     "MERGE_SINGLE_BASELINE_FILES",
 ]
@@ -180,11 +196,14 @@ args = [
     "${NOTEBOOK_OPTS:toml_file}",
     "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${POSTPROCESS_AND_PSPEC_OPTS:PSPEC_OUT_DIR}",
+    "${POWER_SPECTRUM_SUMMARY_OPTS:SUMMARY_OUT_DIR}",
 ]
 mem = 64000
 
 [SIGNAL_LOSS_ANALYSIS]
-# Runs once after the summaries: compares the filtered and unfiltered results (signal_loss_analysis.ipynb).
+# Compares the filtered and unfiltered summaries (signal_loss_analysis.ipynb).
+# args: toml_file, conda_env, nb_template_dir, pspec_out_dir, summary_out_dir, signal_loss_out_dir
 prereqs = [
     "POWER_SPECTRUM_SUMMARY",
 ]
@@ -194,4 +213,7 @@ args = [
     "${NOTEBOOK_OPTS:toml_file}",
     "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
+    "${POSTPROCESS_AND_PSPEC_OPTS:PSPEC_OUT_DIR}",
+    "${POWER_SPECTRUM_SUMMARY_OPTS:SUMMARY_OUT_DIR}",
+    "${SIGNAL_LOSS_OPTS:SIGNAL_LOSS_OUT_DIR}",
 ]

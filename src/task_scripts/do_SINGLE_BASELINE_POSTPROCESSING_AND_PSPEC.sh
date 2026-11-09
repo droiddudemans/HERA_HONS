@@ -2,24 +2,25 @@
 set -e
 
 # One baseline file in, two power spectra out:
-#   <PSPEC_OUT_DIR>/unfiltered/BLPAIR_<a>_<b>/   no delay filter
-#   <PSPEC_OUT_DIR>/filtered/BLPAIR_<a>_<b>/     delay filter with the hw_fract / eigenvalue cutoff predicted from the
-#                                                fit written by DELAY_FILTERING_ANALYSIS_AND_FITTING
-# Usage: do_SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC.sh <input_file> <toml_file> <toml_section> <conda_env> <nb_template_dir>
+#   <pspec_out_dir>/unfiltered/BLPAIR_<a>_<b>/   no delay filter
+#   <pspec_out_dir>/filtered/BLPAIR_<a>_<b>/     delay filter with the configuration predicted from the stored fit
+# Usage: do_SINGLE_BASELINE_POSTPROCESSING_AND_PSPEC.sh <input_file> <toml_file> <conda_env> <nb_dir> <pspec_out_dir>
 
 if [ $# -ne 5 ]; then
-    echo "Usage: $0 <input_file> <toml_file> <toml_section> <conda_env> <nb_template_dir>" >&2
+    echo "Usage: $0 <input_file> <toml_file> <conda_env> <nb_dir> <pspec_out_dir>" >&2
     exit 1
 fi
 
 src_dir="$(cd "$(dirname "$0")" && pwd)"
 [ -f "${src_dir}/_common.sh" ] && source "${src_dir}/_common.sh"
-source "${src_dir}/_hons_common.sh"
 
-input="$1"; toml_file="$2"; conda_env="$4"; nb_dir="$5"
-hons_activate_env "${conda_env}"
+input="$1"; toml_file="$2"; conda_env="$3"; nb_dir="$4"; pspec_out="$5"
+# Activate the conda env if one was given and conda is available.
+if [ -n "${conda_env}" ] && command -v conda > /dev/null 2>&1; then
+    eval "$(conda shell.bash hook)"
+    conda activate "${conda_env}"
+fi
 
-# makeflow hands over a file name; the data are in the working directory.
 if [ ! -f "${input}" ]; then
     echo "Input file ${input} not found in $(pwd)" >&2
     exit 1
@@ -32,15 +33,7 @@ if [ -z "${pair}" ]; then
     exit 1
 fi
 
-fit_json=$(hons_fit_result_file "${toml_file}")
-if [ ! -f "${fit_json}" ]; then
-    echo "Fit results ${fit_json} not found; DELAY_FILTERING_ANALYSIS_AND_FITTING must finish first" >&2
-    exit 1
-fi
-
-pspec_out=$(hons_toml_get "${toml_file}" POSTPROCESS_AND_PSPEC_OPTS PSPEC_OUT_DIR)
 nb="${nb_dir}/single_baseline_postprocessing_and_pspec.ipynb"
-
 export TOML_FILE="${toml_file}"
 export MPLBACKEND=Agg
 export HDF5_USE_FILE_LOCKING=FALSE
@@ -52,7 +45,7 @@ papermill "${nb}" "${out}/sbpp_output.ipynb" \
     -r TOML_FILE "${toml_file}" -r INPUT_FILE "${input}" -r OUTPUT_DIR "${out}" \
     -p PERFORM_DLY_FILT False -p USE_FIT_RESULTS False
 
-# ---- filtered (configuration from the fit) ----
+# ---- filtered (the notebook predicts the configuration from the stored fit and fails if there is none) ----
 out="${pspec_out}/filtered/BLPAIR_${pair}"
 mkdir -p "${out}"
 papermill "${nb}" "${out}/sbpp_output.ipynb" \
