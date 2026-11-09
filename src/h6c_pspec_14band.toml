@@ -16,7 +16,7 @@ kernel = ""
 # Directory holding OUR copies of the notebooks used by this makeflow:
 #   delay_filtering_analysis_and_fitting, single_baseline_postprocessing_and_pspec,
 #   power_spectrum_summary, signal_loss_analysis (all .ipynb)
-nb_template_dir = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/HONS/notebooks"
+nb_template_dir = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/src/notebooks"
 
 [GLOBAL_OPTS]
 FM_low_freq = 87.5  # in MHz
@@ -90,7 +90,7 @@ CHANNEL_FLAG_CUT = 0.0
 # Where the single-baseline pspecs and the merged pspecs go:
 #   <PSPEC_OUT_DIR>/{filtered,unfiltered}/BLPAIR_*/   one directory per baseline file
 #   <PSPEC_OUT_DIR>/merged/{filtered,unfiltered}/     one merged file each
-PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/output/pspec_out"
+PSPEC_OUT_DIR = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/pspec_out"
 
 # Temporal options
 INTEGRATION_FLAG_CUT = 0.2
