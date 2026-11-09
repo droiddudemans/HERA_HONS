@@ -114,6 +114,10 @@ STORE_WINDOW_FUNCTIONS = false
 [DELAY_FILTERING_FITTING_OPTIONS]  # Read by delay_filtering_analysis_and_fitting (writes the fit) and single_baseline_postprocessing_and_pspec (reads it)
 FIT_REQUIRES_MAX_SIGNAL_LOSS_BEYOND_HORIZON = 0.03
 FIT_RESULTS_OUT = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/delay_filtering_fit_results"
+# The fit itself. The fitting job writes it here and every single-baseline job reads it from here.
+# If this file already exists the fitting job is skipped entirely (no datasets are opened, nothing is fitted):
+# put an existing fit_result.json here to reuse it, or delete it to refit.
+FIT_RESULT_FILE = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/output/delay_filtering_fit_results/validation/eor_only/fit_testing/fit_results/fit_result.json"
 FIT_DATA = "/lustre/aoc/projects/hera/Validation/delay_filtering_tests/HERA_HONS/data"
 FIT_ON_EXPERIMENTAL = false
 # Setting below to false means full validation data (including fg and systematics)
@@ -145,12 +149,14 @@ actions = [
 
 [DELAY_FILTERING_ANALYSIS_AND_FITTING]
 # Runs once for the whole dataset (chunk_size = "all"). Writes fit_result.json under FIT_RESULTS_OUT.
-# args: toml_file, conda_env, nb_template_dir, fit_results_out
+# Skipped (exits at once) if FIT_RESULT_FILE already exists.
+# args: toml_file, conda_env, nb_template_dir, fit_results_out, fit_result_file
 args = [
     "${NOTEBOOK_OPTS:toml_file}",
     "${Options:conda_env}",
     "${NOTEBOOK_TEMPLATE_OPTS:nb_template_dir}",
     "${DELAY_FILTERING_FITTING_OPTIONS:FIT_RESULTS_OUT}",
+    "${DELAY_FILTERING_FITTING_OPTIONS:FIT_RESULT_FILE}",
 ]
 chunk_size = "all"
 mem = 32000
